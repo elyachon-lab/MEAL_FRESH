@@ -29,7 +29,7 @@ export default async function IngredientsPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "1.25rem" }}>
-        {categories.map(category => (
+        {categories.map((category: { id: string; name: string }) => (
           <Link key={category.id} href={`/ingredients/${category.id}`} style={{ textDecoration: "none", color: "inherit" }}>
             <article className="card" style={{ height: "100%", overflow: "hidden" }}>
               <div style={{ background: "var(--primary-light)", padding: "2rem 1rem", display: "flex", alignItems: "center", justifyContent: "center" }}>

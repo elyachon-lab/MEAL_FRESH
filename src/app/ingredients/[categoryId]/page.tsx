@@ -75,7 +75,7 @@ export default async function CategoryDetailPage({ params }: { params: { categor
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {category.ingredients.map(ing => (
+              {category.ingredients.map((ing: any) => (
                 <div key={ing.id} className="card glass-panel">
                   <h3 style={{ color: "var(--primary)", marginBottom: "0.5rem" }}>{ing.name}</h3>
                   
@@ -83,7 +83,7 @@ export default async function CategoryDetailPage({ params }: { params: { categor
                     <div>
                       <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}>Recettes avec cet ingrédient :</span>
                       <ul style={{ marginTop: "0.5rem", paddingLeft: "1.5rem" }}>
-                        {ing.recipes.map(ri => (
+                        {ing.recipes.map((ri: any) => (
                           <li key={ri.recipe.id} style={{ fontSize: "0.875rem", marginBottom: "0.25rem" }}>
                             {ri.recipe.title} {ri.quantity && <span style={{ color: "var(--text-secondary)" }}>({ri.quantity})</span>}
                           </li>

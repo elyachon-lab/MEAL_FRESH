@@ -26,7 +26,7 @@ export default async function RecipesPage() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {recipes.map(recipe => (
+              {recipes.map((recipe: any) => (
                 <RecipeCard key={recipe.id} recipe={recipe} categories={categories} />
               ))}
             </div>
