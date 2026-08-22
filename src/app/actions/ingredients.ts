@@ -19,13 +19,18 @@ export async function getIngredients() {
  * Si l'ingrédient existe déjà (même nom, même catégorie), le réutilise.
  */
 export async function findOrCreateIngredient(name: string, categoryId: string): Promise<string> {
-  const existing = await prisma.ingredient.findFirst({
-    where: { name: { equals: name.trim(), mode: "insensitive" }, categoryId }
+  const trimmed = name.trim();
+  const ingredientsInCategory = await prisma.ingredient.findMany({
+    where: { categoryId }
   });
+  
+  const existing = ingredientsInCategory.find(
+    i => i.name.toLowerCase() === trimmed.toLowerCase()
+  );
   if (existing) return existing.id;
 
   const created = await prisma.ingredient.create({
-    data: { name: name.trim(), categoryId }
+    data: { name: trimmed, categoryId }
   });
   revalidatePath("/ingredients");
   return created.id;
