@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && prisma migrate deploy && npx tsx prisma/seed.ts && next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate"
@@ -28,6 +28,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
     "prisma": "^7.9.1",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }
