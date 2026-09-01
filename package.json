@@ -4,14 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && npx tsx prisma/seed.ts && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
+    "@libsql/client": "^0.17.4",
     "@prisma/adapter-better-sqlite3": "^7.9.1",
+    "@prisma/adapter-libsql": "^7.10.0",
     "@prisma/client": "^7.9.1",
     "better-sqlite3": "^13.0.3",
     "date-fns": "^4.4.0",

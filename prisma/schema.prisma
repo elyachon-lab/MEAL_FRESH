@@ -51,8 +51,29 @@ model RecipeIngredient {
 model Planning {
   id        String   @id @default(uuid())
   date      DateTime
-  mealTime  String   // "Midi" or "Soir"
+  mealTime  String   // "Matin", "Midi", "Goûter", "Soir"
   
   recipeId  String
   recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 }
+
+model MonthlyBudget {
+  id        String    @id @default(uuid())
+  month     String    @unique // Format YYYY-MM e.g. "2026-09"
+  amount    Float     // Budget global prévisionnel pour le mois
+  createdAt DateTime  @default(now())
+
+  expenses  Expense[]
+}
+
+model Expense {
+  id              String        @id @default(uuid())
+  date            DateTime
+  amount          Float
+  category        String        // Ex: "Supermarché", "Marché", "Boucherie", "Boulangerie", "Épicerie", "Autre"
+  description     String?
+  monthlyBudgetId String
+  monthlyBudget   MonthlyBudget @relation(fields: [monthlyBudgetId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+}
+

@@ -22,7 +22,12 @@ export async function getWeeklyPlanning(startDate: Date) {
 }
 
 // Ajouter ou déplacer un repas
-export async function assignMeal(recipeId: string, date: Date, mealTime: "Midi" | "Soir", existingPlanningId?: string) {
+export async function assignMeal(
+  recipeId: string, 
+  date: Date, 
+  mealTime: "Matin" | "Midi" | "Goûter" | "Soir", 
+  existingPlanningId?: string
+) {
   if (existingPlanningId) {
     // Déplacement d'un repas existant
     await prisma.planning.update({
