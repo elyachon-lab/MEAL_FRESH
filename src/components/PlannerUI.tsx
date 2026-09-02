@@ -5,13 +5,16 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 import { format, startOfWeek, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
 import { assignMeal, removeMeal } from "../app/actions/planning";
+import RecipeForm from "./RecipeForm";
 
+type Category = { id: string; name: string };
 type Recipe = { id: string; title: string };
 type PlannedMeal = { id: string; recipe: Recipe; date: Date; mealTime: string };
 
 type PlannerUIProps = {
   recipes: Recipe[];
   plannings: PlannedMeal[];
+  categories?: Category[];
 };
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -24,12 +27,12 @@ const MEALS = [
 
 type MealKey = "Matin" | "Midi" | "Goûter" | "Soir";
 
-export default function PlannerUI({ recipes, plannings }: PlannerUIProps) {
+export default function PlannerUI({ recipes, plannings, categories = [] }: PlannerUIProps) {
   const [isReady, setIsReady] = useState(false);
-  const [activeDayIndex, setActiveDayIndex] = useState<number | null>(null); // null = Tout afficher sur mobile
-  const [mobileMode, setMobileMode] = useState<"all" | "tab">("all"); // 'all' = Semaine complète par jour, 'tab' = Filtre jour
+  const [activeDayIndex, setActiveDayIndex] = useState<number | null>(null);
+  const [mobileMode, setMobileMode] = useState<"all" | "tab">("all");
+  const [showFormModal, setShowFormModal] = useState(false);
 
-  // Date de début de semaine (Lundi)
   const startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   useEffect(() => {
@@ -84,11 +87,31 @@ export default function PlannerUI({ recipes, plannings }: PlannerUIProps) {
         {/* Banque de Recettes (Source) */}
         <div className="card recipe-bank-card">
           <div className="recipe-bank-header">
-            <h2>📖 Banque de Recettes</h2>
-            <span className="badge">{recipes.length} disponibles</span>
+            <div>
+              <h2>📖 Banque de Recettes</h2>
+              <span className="badge">{recipes.length} enregistrée{recipes.length > 1 ? "s" : ""}</span>
+            </div>
+            
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowFormModal(!showFormModal)}
+              style={{ marginTop: "0.4rem" }}
+            >
+              {showFormModal ? "✕ Fermer" : "➕ Créer une recette"}
+            </button>
           </div>
+
+          {/* Formulaire rapide de création intégré dans la Banque */}
+          {showFormModal && (
+            <div style={{ background: "var(--bg)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", border: "1.5px solid var(--primary)" }}>
+              <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>➕ Nouvelle Recette dans la Banque</h3>
+              <RecipeForm categories={categories} onSuccess={() => setShowFormModal(false)} />
+            </div>
+          )}
+
           <p className="text-sm text-secondary" style={{ marginBottom: "1rem" }}>
-            Glissez une recette ou sélectionnez-la dans le planning ci-contre.
+            Glissez une recette vers un créneau ou sélectionnez-la dans les menus déroulants.
           </p>
 
           <Droppable droppableId="recipe-bank">
@@ -99,9 +122,18 @@ export default function PlannerUI({ recipes, plannings }: PlannerUIProps) {
                 className={`recipe-bank-list ${snapshot.isDraggingOver ? 'dragging-over' : ''}`}
               >
                 {recipes.length === 0 ? (
-                  <p className="text-muted text-sm" style={{ padding: "1rem", textAlign: "center" }}>
-                    Aucune recette enregistrée. Ajoutez-en via l'onglet Recettes !
-                  </p>
+                  <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
+                    <p className="text-muted text-sm" style={{ marginBottom: "0.75rem" }}>
+                      Aucune recette enregistrée.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => setShowFormModal(true)}
+                    >
+                      + Ajouter votre 1ère recette
+                    </button>
+                  </div>
                 ) : (
                   recipes.map((recipe, index) => (
                     <Draggable key={`recipe_${recipe.id}`} draggableId={`recipe_${recipe.id}`} index={index}>

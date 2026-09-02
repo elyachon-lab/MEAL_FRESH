@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createRecipeWithIngredients } from "../app/actions/recipes";
 
 type Category = { id: string; name: string };
@@ -17,7 +17,7 @@ const CATEGORY_EMOJIS: Record<string, string> = {
 
 type IngredientLine = { name: string; categoryId: string; quantity: string };
 
-export default function RecipeForm({ categories }: { categories: Category[] }) {
+export default function RecipeForm({ categories, onSuccess }: { categories: Category[]; onSuccess?: () => void }) {
   const [title, setTitle] = useState("");
   const [urlSource, setUrlSource] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -27,9 +27,19 @@ export default function RecipeForm({ categories }: { categories: Category[] }) {
   const [ingQty, setIngQty] = useState("");
   const [ingCategoryId, setIngCategoryId] = useState(categories[0]?.id ?? "");
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    if (!ingCategoryId && categories.length > 0) {
+      setIngCategoryId(categories[0].id);
+    }
+  }, [categories, ingCategoryId]);
+
   const handleAddIngredient = () => {
-    if (!ingName.trim() || !ingCategoryId) return;
-    setIngredients([...ingredients, { name: ingName.trim(), categoryId: ingCategoryId, quantity: ingQty }]);
+    if (!ingName.trim()) return;
+    const catId = ingCategoryId || categories[0]?.id || "";
+    setIngredients([...ingredients, { name: ingName.trim(), categoryId: catId, quantity: ingQty }]);
     setIngName("");
     setIngQty("");
   };
@@ -41,40 +51,120 @@ export default function RecipeForm({ categories }: { categories: Category[] }) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") { e.preventDefault(); handleAddIngredient(); }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAddIngredient();
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
-    await createRecipeWithIngredients({ title, urlSource, instructions, ingredients });
-    setTitle(""); setUrlSource(""); setInstructions(""); setIngredients([]);
+    if (!title.trim()) {
+      setMessage({ text: "Veuillez entrer un titre de recette.", type: "error" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setMessage(null);
+
+    try {
+      // Si un ingrédient est en cours de saisie dans le champ texte sans avoir été ajouté avec le bouton +
+      let finalIngredients = [...ingredients];
+      if (ingName.trim()) {
+        const catId = ingCategoryId || categories[0]?.id || "";
+        finalIngredients.push({ name: ingName.trim(), categoryId: catId, quantity: ingQty });
+      }
+
+      await createRecipeWithIngredients({
+        title,
+        urlSource,
+        instructions,
+        ingredients: finalIngredients,
+      });
+
+      setTitle("");
+      setUrlSource("");
+      setInstructions("");
+      setIngredients([]);
+      setIngName("");
+      setIngQty("");
+
+      setMessage({ text: "✅ Recette enregistrée dans la banque avec succès !", type: "success" });
+
+      if (onSuccess) {
+        onSuccess();
+      }
+
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err: any) {
+      setMessage({ text: err?.message || "Erreur lors de l'enregistrement.", type: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name ?? "";
+  const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name ?? "Général";
   const getCategoryEmoji = (id: string) => CATEGORY_EMOJIS[getCategoryName(id)] ?? "🍽️";
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+      {message && (
+        <div
+          className={`badge ${message.type === "success" ? "badge-accent" : "badge-neutral"}`}
+          style={{
+            padding: "0.75rem 1rem",
+            borderRadius: "var(--radius-md)",
+            fontSize: "0.875rem",
+            textAlign: "center",
+            display: "block",
+            color: message.type === "success" ? "var(--accent)" : "var(--danger)",
+            background: message.type === "success" ? "var(--accent-light)" : "#fee2e2",
+          }}
+        >
+          {message.text}
+        </div>
+      )}
+
       <div className="input-group" style={{ marginBottom: 0 }}>
-        <label className="input-label" htmlFor="rf-title">Titre *</label>
-        <input id="rf-title" className="input-field" required value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex: Pâtes Carbonara" />
+        <label className="input-label" htmlFor="rf-title">Titre de la recette *</label>
+        <input
+          id="rf-title"
+          className="input-field"
+          required
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="Ex: Tarte aux Pommes, Poulet Rôti..."
+        />
       </div>
 
       <div className="input-group" style={{ marginBottom: 0 }}>
-        <label className="input-label" htmlFor="rf-url">Lien source (optionnel)</label>
-        <input id="rf-url" className="input-field" type="url" value={urlSource} onChange={e => setUrlSource(e.target.value)} placeholder="https://..." />
+        <label className="input-label" htmlFor="rf-url">Lien web / Source (optionnel)</label>
+        <input
+          id="rf-url"
+          className="input-field"
+          type="url"
+          value={urlSource}
+          onChange={e => setUrlSource(e.target.value)}
+          placeholder="https://..."
+        />
       </div>
 
       <div className="input-group" style={{ marginBottom: 0 }}>
-        <label className="input-label" htmlFor="rf-instructions">Instructions</label>
-        <textarea id="rf-instructions" className="input-field" rows={3} value={instructions} onChange={e => setInstructions(e.target.value)} placeholder="Étapes de préparation..." />
+        <label className="input-label" htmlFor="rf-instructions">Instructions de préparation</label>
+        <textarea
+          id="rf-instructions"
+          className="input-field"
+          rows={3}
+          value={instructions}
+          onChange={e => setInstructions(e.target.value)}
+          placeholder="Étapes de préparation..."
+        />
       </div>
 
       {/* Section ingrédients */}
       <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
         <div style={{ background: "var(--surface-hover)", padding: "0.75rem 1rem", fontWeight: 600, fontSize: "0.875rem" }}>
-          🛒 Ingrédients
+          🛒 Ingrédients (optionnels)
         </div>
 
         <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -95,14 +185,14 @@ export default function RecipeForm({ categories }: { categories: Category[] }) {
             </ul>
           )}
 
-          {/* Ligne d'ajout rapide */}
+          {/* Ligne d'ajout rapide d'un ingrédient */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: "0.5rem" }}>
             <input
               className="input-field"
               value={ingName}
               onChange={e => setIngName(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Nom de l'ingrédient (Ex: Tomate)"
+              placeholder="Nom ingrédient (ex: Tomate)"
               style={{ marginBottom: 0 }}
             />
             <input
@@ -128,19 +218,20 @@ export default function RecipeForm({ categories }: { categories: Category[] }) {
                 </option>
               ))}
             </select>
-            <button type="button" onClick={handleAddIngredient} className="btn btn-primary" style={{ padding: "0.75rem 1.25rem", whiteSpace: "nowrap" }}>
-              + Ajouter
+            <button type="button" onClick={handleAddIngredient} className="btn btn-outline btn-sm" style={{ padding: "0.6rem 1rem", whiteSpace: "nowrap" }}>
+              + Ingrédient
             </button>
           </div>
-
-          <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: 0 }}>
-            💡 Appuyez sur Entrée pour ajouter rapidement l'ingrédient.
-          </p>
         </div>
       </div>
 
-      <button type="submit" className="btn btn-primary" style={{ marginTop: "0.25rem", padding: "0.875rem" }}>
-        💾 Enregistrer la recette
+      <button
+        type="submit"
+        className="btn btn-primary"
+        disabled={isSubmitting}
+        style={{ marginTop: "0.25rem", padding: "0.875rem", width: "100%" }}
+      >
+        {isSubmitting ? "Enregistrement en cours..." : "💾 Enregistrer la recette"}
       </button>
     </form>
   );
