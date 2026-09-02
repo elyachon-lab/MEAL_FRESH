@@ -26,8 +26,9 @@ type MealKey = "Matin" | "Midi" | "Goûter" | "Soir";
 
 export default function PlannerUI({ recipes, plannings }: PlannerUIProps) {
   const [isReady, setIsReady] = useState(false);
-  const [activeDayIndex, setActiveDayIndex] = useState(0); // Pour la vue onglets mobile
-  
+  const [activeDayIndex, setActiveDayIndex] = useState<number | null>(null); // null = Tout afficher sur mobile
+  const [mobileMode, setMobileMode] = useState<"all" | "tab">("all"); // 'all' = Semaine complète par jour, 'tab' = Filtre jour
+
   // Date de début de semaine (Lundi)
   const startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
 
@@ -87,7 +88,7 @@ export default function PlannerUI({ recipes, plannings }: PlannerUIProps) {
             <span className="badge">{recipes.length} disponibles</span>
           </div>
           <p className="text-sm text-secondary" style={{ marginBottom: "1rem" }}>
-            Glissez une recette vers un créneau ou sélectionnez-la dans les menus déroulants.
+            Glissez une recette ou sélectionnez-la dans le planning ci-contre.
           </p>
 
           <Droppable droppableId="recipe-bank">
@@ -127,33 +128,55 @@ export default function PlannerUI({ recipes, plannings }: PlannerUIProps) {
         {/* Semainier (Destinations) */}
         <div className="card planner-grid-card">
           <div className="planner-header">
-            <div>
-              <h2>📅 Semainier de Repas</h2>
-              <p className="text-sm text-secondary">
-                Semaine du {format(startDate, "dd MMMM", { locale: fr })} au {format(addDays(startDate, 6), "dd MMMM yyyy", { locale: fr })}
-              </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+              <div>
+                <h2>📅 Semainier de Repas</h2>
+                <p className="text-sm text-secondary">
+                  Semaine du {format(startDate, "dd MMMM", { locale: fr })} au {format(addDays(startDate, 6), "dd MMMM yyyy", { locale: fr })}
+                </p>
+              </div>
+
+              {/* Mode de vue sur Smartphone */}
+              <div className="mobile-view-toggle">
+                <button
+                  type="button"
+                  className={`view-toggle-btn ${mobileMode === "all" ? "active" : ""}`}
+                  onClick={() => { setMobileMode("all"); setActiveDayIndex(null); }}
+                >
+                  Vue Semaine (Défilant)
+                </button>
+                <button
+                  type="button"
+                  className={`view-toggle-btn ${mobileMode === "tab" ? "active" : ""}`}
+                  onClick={() => { setMobileMode("tab"); if (activeDayIndex === null) setActiveDayIndex(0); }}
+                >
+                  Par Jour
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Navigation par Onglets Jours (Visible sur Smartphone) */}
-          <div className="mobile-day-tabs">
-            {DAYS.map((dayName, index) => {
-              const date = addDays(startDate, index);
-              return (
-                <button
-                  key={index}
-                  type="button"
-                  className={`mobile-day-tab ${activeDayIndex === index ? 'active' : ''}`}
-                  onClick={() => setActiveDayIndex(index)}
-                >
-                  <span className="day-name">{dayName.slice(0, 3)}</span>
-                  <span className="day-date">{format(date, "dd/MM")}</span>
-                </button>
-              );
-            })}
-          </div>
+          {/* Navigation par Onglets Jours (Visible sur Mobile si mode 'tab') */}
+          {mobileMode === "tab" && (
+            <div className="mobile-day-tabs">
+              {DAYS.map((dayName, index) => {
+                const date = addDays(startDate, index);
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    className={`mobile-day-tab ${activeDayIndex === index ? 'active' : ''}`}
+                    onClick={() => setActiveDayIndex(index)}
+                  >
+                    <span className="day-name">{dayName.slice(0, 3)}</span>
+                    <span className="day-date">{format(date, "dd/MM")}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          {/* Vue Grille Bureau (Large Screen) */}
+          {/* Vue Grille Bureau (Tableau 4 créneaux pour grand écran) */}
           <div className="desktop-planner-table">
             <div className="planner-table-header">
               <div>Jour</div>
@@ -223,38 +246,42 @@ export default function PlannerUI({ recipes, plannings }: PlannerUIProps) {
             })}
           </div>
 
-          {/* Vue Cartes Mobile (Smartphone View) */}
+          {/* Vue Planning Mobile (Défilant par jour avec 4 créneaux) */}
           <div className="mobile-planner-cards">
             {DAYS.map((dayName, dayIndex) => {
               const currentDate = addDays(startDate, dayIndex);
-              const isSelected = dayIndex === activeDayIndex;
+              const isVisible = mobileMode === "all" || activeDayIndex === dayIndex;
+
+              if (!isVisible) return null;
 
               return (
-                <div key={dayIndex} className={`mobile-day-card ${isSelected ? 'is-active' : 'is-hidden'}`}>
+                <div key={dayIndex} className="mobile-day-card">
                   <div className="mobile-day-card-header">
-                    <h3>{dayName}</h3>
-                    <span className="badge badge-neutral">{format(currentDate, "dd MMMM yyyy", { locale: fr })}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <h3>{dayName}</h3>
+                      <span className="badge badge-neutral">{format(currentDate, "dd/MM", { locale: fr })}</span>
+                    </div>
                   </div>
 
-                  <div className="mobile-meals-list">
+                  <div className="mobile-meals-grid">
                     {MEALS.map((m) => {
                       const planned = plannings.find(
                         p => new Date(p.date).getDay() === currentDate.getDay() && p.mealTime === m.key
                       );
 
                       return (
-                        <div key={m.key} className="mobile-meal-box">
-                          <div className="mobile-meal-label">
+                        <div key={m.key} className="mobile-meal-slot-box">
+                          <div className="mobile-meal-slot-header">
                             <span>{m.icon}</span> <strong>{m.label}</strong>
                           </div>
 
-                          <div className="mobile-meal-content">
+                          <div className="mobile-meal-slot-select-wrapper">
                             <select
                               className="input-field mobile-meal-select"
                               value={planned ? planned.recipe.id : ""}
                               onChange={(e) => handleSelectMeal(dayIndex, m.key, e.target.value, planned?.id)}
                             >
-                              <option value="">-- Aucun repas prévu --</option>
+                              <option value="">-- Ajouter un repas --</option>
                               {recipes.map((r) => (
                                 <option key={r.id} value={r.id}>
                                   {r.title}
@@ -265,10 +292,11 @@ export default function PlannerUI({ recipes, plannings }: PlannerUIProps) {
                             {planned && (
                               <button
                                 type="button"
-                                className="btn btn-ghost btn-sm"
+                                className="btn btn-ghost btn-sm remove-meal-btn"
                                 onClick={() => removeMeal(planned.id)}
+                                title="Supprimer"
                               >
-                                🗑️
+                                ✕
                               </button>
                             )}
                           </div>

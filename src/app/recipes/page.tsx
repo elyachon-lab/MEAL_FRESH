@@ -7,17 +7,22 @@ export default async function RecipesPage() {
   const [recipes, categories] = await Promise.all([getRecipes(), getCategories()]);
 
   return (
-    <div>
-      <div className="page-header">
+    <div className="recipes-page-wrapper">
+      <div className="page-header" style={{ paddingBottom: "1rem" }}>
         <h1>📖 Banque de Recettes</h1>
+        <p className="text-secondary text-sm">
+          Consultez vos recettes enregistrées, leurs ingrédients et ajoutez-en de nouvelles facilement.
+        </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: "2rem" }}>
-        {/* Liste des recettes */}
-        <div>
-          <h2 style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text-secondary)" }}>
-            {recipes.length} recette{recipes.length !== 1 ? "s" : ""} enregistrée{recipes.length !== 1 ? "s" : ""}
-          </h2>
+      <div className="recipes-layout">
+        {/* Liste des recettes en grille responsive */}
+        <div className="recipes-main-section">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+            <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: "var(--text-secondary)", margin: 0 }}>
+              {recipes.length} recette{recipes.length !== 1 ? "s" : ""} enregistrée{recipes.length !== 1 ? "s" : ""}
+            </h2>
+          </div>
 
           {recipes.length === 0 ? (
             <div className="card" style={{ textAlign: "center", padding: "3rem" }}>
@@ -25,7 +30,7 @@ export default async function RecipesPage() {
               <p style={{ color: "var(--text-secondary)" }}>Aucune recette pour le moment. Commencez par en ajouter une !</p>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div className="recipes-cards-grid">
               {recipes.map((recipe: any) => (
                 <RecipeCard key={recipe.id} recipe={recipe} categories={categories} />
               ))}
@@ -33,10 +38,12 @@ export default async function RecipesPage() {
           )}
         </div>
 
-        {/* Formulaire d'ajout fixe */}
-        <div className="card" style={{ height: "fit-content", position: "sticky", top: "90px" }}>
-          <h2 style={{ fontSize: "1.25rem", marginBottom: "1.5rem" }}>➕ Ajouter une Recette</h2>
-          <RecipeForm categories={categories} />
+        {/* Formulaire d'ajout en sidebar / fixe */}
+        <div className="recipes-sidebar-section">
+          <div className="card panel recipe-form-card">
+            <h2 style={{ fontSize: "1.2rem", marginBottom: "1.25rem" }}>➕ Ajouter une Recette</h2>
+            <RecipeForm categories={categories} />
+          </div>
         </div>
       </div>
     </div>
