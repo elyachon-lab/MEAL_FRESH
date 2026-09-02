@@ -12,14 +12,5 @@ export default async function BudgetPage() {
   const currentMonthStr = format(new Date(), "yyyy-MM");
   const budget = await getMonthlyBudget(currentMonthStr);
 
-  // Formater les dates des dépenses pour transmission au client
-  const formattedBudget = {
-    ...budget,
-    expenses: budget.expenses.map((e) => ({
-      ...e,
-      date: e.date.toISOString(),
-    })),
-  };
-
-  return <BudgetUI budget={formattedBudget} />;
+  return <BudgetUI budget={budget} />;
 }

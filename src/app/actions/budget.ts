@@ -25,11 +25,19 @@ export async function getMonthlyBudget(monthStr: string) {
     });
   }
 
-  return budget;
+  return {
+    ...budget,
+    createdAt: budget.createdAt.toISOString(),
+    expenses: budget.expenses.map((e) => ({
+      ...e,
+      date: e.date.toISOString(),
+      createdAt: e.createdAt.toISOString(),
+    })),
+  };
 }
 
 export async function updateBudgetAmount(monthStr: string, newAmount: number) {
-  if (isNaN(newAmount) || newAmount < 0) return;
+  if (isNaN(newAmount) || newAmount < 0) return { success: false };
 
   await prisma.monthlyBudget.upsert({
     where: { month: monthStr },
@@ -38,6 +46,7 @@ export async function updateBudgetAmount(monthStr: string, newAmount: number) {
   });
 
   revalidatePath("/budget");
+  return { success: true };
 }
 
 export async function addExpense(data: {
@@ -47,9 +56,8 @@ export async function addExpense(data: {
   category: string;
   description?: string;
 }) {
-  if (!data.amount || data.amount <= 0 || !data.category) return;
+  if (!data.amount || data.amount <= 0 || !data.category) return { success: false };
 
-  // S'assurer que le budget du mois existe
   const budget = await getMonthlyBudget(data.monthStr);
 
   await prisma.expense.create({
@@ -63,6 +71,7 @@ export async function addExpense(data: {
   });
 
   revalidatePath("/budget");
+  return { success: true };
 }
 
 export async function deleteExpense(expenseId: string) {
@@ -71,4 +80,5 @@ export async function deleteExpense(expenseId: string) {
   });
 
   revalidatePath("/budget");
+  return { success: true };
 }

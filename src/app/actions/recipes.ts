@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { findOrCreateIngredient, getCategories } from "./ingredients";
 
 export async function getRecipes() {
-  return await prisma.recipe.findMany({
+  const recipes = await prisma.recipe.findMany({
     orderBy: { createdAt: "desc" },
     include: {
       ingredients: {
@@ -17,6 +17,11 @@ export async function getRecipes() {
       }
     }
   });
+
+  return recipes.map(r => ({
+    ...r,
+    createdAt: r.createdAt.toISOString(),
+  }));
 }
 
 export async function createRecipe(data: FormData) {
@@ -26,7 +31,7 @@ export async function createRecipe(data: FormData) {
 
   if (!title) throw new Error("Le titre de la recette est requis.");
 
-  await prisma.recipe.create({
+  const created = await prisma.recipe.create({
     data: {
       title,
       urlSource: urlSource || null,
@@ -34,8 +39,11 @@ export async function createRecipe(data: FormData) {
     },
   });
 
+  revalidatePath("/");
   revalidatePath("/recipes");
   revalidatePath("/planning");
+
+  return { success: true, id: created.id };
 }
 
 export async function createRecipeWithIngredients(data: {
@@ -49,10 +57,8 @@ export async function createRecipeWithIngredients(data: {
 
   const categories = await getCategories();
   const defaultCategoryId = categories[0]?.id;
-
   const rawIngredients = data.ingredients || [];
 
-  // Résoudre chaque ingrédient
   const resolvedIngredients = await Promise.all(
     rawIngredients.map(async (ing) => {
       const ingName = ing.name?.trim();
@@ -84,7 +90,7 @@ export async function createRecipeWithIngredients(data: {
   revalidatePath("/planning");
   revalidatePath("/ingredients");
 
-  return createdRecipe;
+  return { success: true, id: createdRecipe.id };
 }
 
 export async function deleteRecipe(id: string) {
@@ -92,6 +98,7 @@ export async function deleteRecipe(id: string) {
   revalidatePath("/");
   revalidatePath("/recipes");
   revalidatePath("/planning");
+  return { success: true };
 }
 
 export async function updateRecipeWithIngredients(data: {
@@ -141,4 +148,6 @@ export async function updateRecipeWithIngredients(data: {
   revalidatePath("/recipes");
   revalidatePath("/planning");
   revalidatePath("/ingredients");
+
+  return { success: true };
 }

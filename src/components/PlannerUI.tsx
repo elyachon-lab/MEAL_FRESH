@@ -9,7 +9,7 @@ import RecipeForm from "./RecipeForm";
 
 type Category = { id: string; name: string };
 type Recipe = { id: string; title: string };
-type PlannedMeal = { id: string; recipe: Recipe; date: Date; mealTime: string };
+type PlannedMeal = { id: string; recipe: Recipe; date: Date | string; mealTime: string };
 
 type PlannerUIProps = {
   recipes: Recipe[];
@@ -52,12 +52,13 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
       const [dayStr, mealTime] = destination.droppableId.split("-");
       const dayOffset = parseInt(dayStr, 10);
       const targetDate = addDays(startDate, dayOffset);
+      const targetDateStr = targetDate.toISOString();
       
       if (isFromBank && recipeId) {
-        await assignMeal(recipeId, targetDate, mealTime as MealKey);
+        await assignMeal(recipeId, targetDateStr, mealTime as MealKey);
       } else {
         const planningId = draggableId.replace("planning_", "");
-        await assignMeal("", targetDate, mealTime as MealKey, planningId);
+        await assignMeal("", targetDateStr, mealTime as MealKey, planningId);
       }
     } else {
       if (!isFromBank) {
@@ -69,12 +70,13 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   const handleSelectMeal = async (dayIndex: number, mealTime: MealKey, recipeId: string, currentPlanningId?: string) => {
     const targetDate = addDays(startDate, dayIndex);
+    const targetDateStr = targetDate.toISOString();
     if (!recipeId) {
       if (currentPlanningId) {
         await removeMeal(currentPlanningId);
       }
     } else {
-      await assignMeal(recipeId, targetDate, mealTime, currentPlanningId);
+      await assignMeal(recipeId, targetDateStr, mealTime, currentPlanningId);
     }
   };
 

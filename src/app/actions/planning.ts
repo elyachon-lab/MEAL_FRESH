@@ -2,13 +2,13 @@
 
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { startOfWeek, addDays, format } from "date-fns";
+import { addDays } from "date-fns";
 
 // Récupérer le planning de la semaine courante
 export async function getWeeklyPlanning(startDate: Date) {
   const end = addDays(startDate, 6);
   
-  return await prisma.planning.findMany({
+  const plannings = await prisma.planning.findMany({
     where: {
       date: {
         gte: startDate,
@@ -19,23 +19,28 @@ export async function getWeeklyPlanning(startDate: Date) {
       recipe: true,
     }
   });
+
+  return plannings.map(p => ({
+    ...p,
+    date: p.date.toISOString(),
+  }));
 }
 
 // Ajouter ou déplacer un repas
 export async function assignMeal(
   recipeId: string, 
-  date: Date, 
+  dateInput: string | Date, 
   mealTime: "Matin" | "Midi" | "Goûter" | "Soir", 
   existingPlanningId?: string
 ) {
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+
   if (existingPlanningId) {
-    // Déplacement d'un repas existant
     await prisma.planning.update({
       where: { id: existingPlanningId },
       data: { date, mealTime },
     });
   } else {
-    // Assignation d'une nouvelle recette
     await prisma.planning.create({
       data: {
         recipeId,
@@ -45,12 +50,16 @@ export async function assignMeal(
     });
   }
   
+  revalidatePath("/");
   revalidatePath("/planning");
+  return { success: true };
 }
 
 export async function removeMeal(planningId: string) {
   await prisma.planning.delete({
     where: { id: planningId }
   });
+  revalidatePath("/");
   revalidatePath("/planning");
+  return { success: true };
 }
