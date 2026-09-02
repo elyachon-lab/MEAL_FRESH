@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { format, parseISO, startOfMonth, getWeekOfMonth, getDaysInMonth } from "date-fns";
+import React, { useState, useTransition } from "react";
+import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import { updateBudgetAmount, addExpense, deleteExpense } from "../app/actions/budget";
 
@@ -36,14 +36,14 @@ const CATEGORIES = [
 export default function BudgetUI({ budget }: BudgetUIProps) {
   const [isEditingBudget, setIsEditingBudget] = useState(false);
   const [budgetAmountInput, setBudgetAmountInput] = useState(budget.amount.toString());
-  
+  const [isPending, startTransition] = useTransition();
+
   // Saisie nouvelle dépense
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const [expenseDate, setExpenseDate] = useState(todayStr);
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("Supermarché");
   const [expenseDescription, setExpenseDescription] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Calculs financiers
   const totalSpent = budget.expenses.reduce((acc, curr) => acc + curr.amount, 0);
@@ -81,39 +81,47 @@ export default function BudgetUI({ budget }: BudgetUIProps) {
     weekGroups[weekKey].expenses.push(item);
   });
 
-  const handleUpdateBudget = async (e: React.FormEvent) => {
+  const handleUpdateBudget = (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(budgetAmountInput);
     if (!isNaN(val) && val >= 0) {
-      await updateBudgetAmount(budget.month, val);
-      setIsEditingBudget(false);
+      startTransition(async () => {
+        await updateBudgetAmount(budget.month, val);
+        setIsEditingBudget(false);
+      });
     }
   };
 
-  const handleAddExpense = async (e: React.FormEvent) => {
+  const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(expenseAmount);
     if (isNaN(amt) || amt <= 0) return;
 
-    setIsSubmitting(true);
-    await addExpense({
-      monthStr: budget.month,
-      dateStr: expenseDate,
-      amount: amt,
-      category: expenseCategory,
-      description: expenseDescription,
-    });
+    startTransition(async () => {
+      await addExpense({
+        monthStr: budget.month,
+        dateStr: expenseDate,
+        amount: amt,
+        category: expenseCategory,
+        description: expenseDescription,
+      });
 
-    setExpenseAmount("");
-    setExpenseDescription("");
-    setIsSubmitting(false);
+      setExpenseAmount("");
+      setExpenseDescription("");
+    });
+  };
+
+  const handleDeleteExpense = (id: string) => {
+    startTransition(async () => {
+      await deleteExpense(id);
+    });
   };
 
   const currentMonthDate = parseISO(`${budget.month}-01`);
   const monthTitle = format(currentMonthDate, "MMMM yyyy", { locale: fr });
 
   return (
-    <div className="budget-dashboard">
+    <div className="budget-dashboard" style={{ opacity: isPending ? 0.8 : 1 }}>
       
       {/* ── En-tête du Budget ── */}
       <div className="budget-header-card card">
@@ -138,8 +146,8 @@ export default function BudgetUI({ budget }: BudgetUIProps) {
                   onChange={(e) => setBudgetAmountInput(e.target.value)}
                   autoFocus
                 />
-                <button type="submit" className="btn btn-primary btn-sm">Valider</button>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIsEditingBudget(false)}>✕</button>
+                <button type="submit" className="btn btn-primary btn-sm" disabled={isPending}>Valider</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIsEditingBudget(false)} disabled={isPending}>✕</button>
               </form>
             ) : (
               <div className="budget-amount-display">
@@ -266,9 +274,9 @@ export default function BudgetUI({ budget }: BudgetUIProps) {
                 type="submit"
                 className="btn btn-primary"
                 style={{ width: "100%", marginTop: "0.5rem" }}
-                disabled={isSubmitting}
+                disabled={isPending}
               >
-                {isSubmitting ? "Enregistrement..." : "Enregistrer la dépense"}
+                {isPending ? "Enregistrement..." : "Enregistrer la dépense"}
               </button>
             </form>
           </div>
@@ -427,7 +435,8 @@ export default function BudgetUI({ budget }: BudgetUIProps) {
                               type="button"
                               className="btn btn-ghost btn-sm"
                               title="Supprimer"
-                              onClick={() => deleteExpense(expense.id)}
+                              onClick={() => handleDeleteExpense(expense.id)}
+                              disabled={isPending}
                             >
                               🗑️
                             </button>

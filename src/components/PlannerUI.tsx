@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { format, startOfWeek, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -32,6 +32,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const [activeDayIndex, setActiveDayIndex] = useState<number | null>(null);
   const [mobileMode, setMobileMode] = useState<"all" | "tab">("all");
   const [showFormModal, setShowFormModal] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   const startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
 
@@ -39,7 +40,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     setIsReady(true);
   }, []);
 
-  const onDragEnd = async (result: DropResult) => {
+  const onDragEnd = (result: DropResult) => {
     const { source, destination, draggableId } = result;
 
     if (!destination) return;
@@ -48,43 +49,54 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     const isFromBank = source.droppableId === "recipe-bank";
     const recipeId = isFromBank ? draggableId.replace("recipe_", "") : null;
     
-    if (destination.droppableId !== "recipe-bank") {
-      const [dayStr, mealTime] = destination.droppableId.split("-");
-      const dayOffset = parseInt(dayStr, 10);
-      const targetDate = addDays(startDate, dayOffset);
-      const targetDateStr = targetDate.toISOString();
-      
-      if (isFromBank && recipeId) {
-        await assignMeal(recipeId, targetDateStr, mealTime as MealKey);
+    startTransition(async () => {
+      if (destination.droppableId !== "recipe-bank") {
+        const [dayStr, mealTime] = destination.droppableId.split("-");
+        const dayOffset = parseInt(dayStr, 10);
+        const targetDate = addDays(startDate, dayOffset);
+        const targetDateStr = targetDate.toISOString();
+        
+        if (isFromBank && recipeId) {
+          await assignMeal(recipeId, targetDateStr, mealTime as MealKey);
+        } else {
+          const planningId = draggableId.replace("planning_", "");
+          await assignMeal("", targetDateStr, mealTime as MealKey, planningId);
+        }
       } else {
-        const planningId = draggableId.replace("planning_", "");
-        await assignMeal("", targetDateStr, mealTime as MealKey, planningId);
+        if (!isFromBank) {
+          const planningId = draggableId.replace("planning_", "");
+          await removeMeal(planningId);
+        }
       }
-    } else {
-      if (!isFromBank) {
-        const planningId = draggableId.replace("planning_", "");
-        await removeMeal(planningId);
-      }
-    }
+    });
   };
 
-  const handleSelectMeal = async (dayIndex: number, mealTime: MealKey, recipeId: string, currentPlanningId?: string) => {
+  const handleSelectMeal = (dayIndex: number, mealTime: MealKey, recipeId: string, currentPlanningId?: string) => {
     const targetDate = addDays(startDate, dayIndex);
     const targetDateStr = targetDate.toISOString();
-    if (!recipeId) {
-      if (currentPlanningId) {
-        await removeMeal(currentPlanningId);
+    
+    startTransition(async () => {
+      if (!recipeId) {
+        if (currentPlanningId) {
+          await removeMeal(currentPlanningId);
+        }
+      } else {
+        await assignMeal(recipeId, targetDateStr, mealTime, currentPlanningId);
       }
-    } else {
-      await assignMeal(recipeId, targetDateStr, mealTime, currentPlanningId);
-    }
+    });
+  };
+
+  const handleRemoveMeal = (planningId: string) => {
+    startTransition(async () => {
+      await removeMeal(planningId);
+    });
   };
 
   if (!isReady) return null;
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div className="planner-container">
+      <div className="planner-container" style={{ opacity: isPending ? 0.8 : 1 }}>
         
         {/* Banque de Recettes (Source) */}
         <div className="card recipe-bank-card">
@@ -257,7 +269,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                                       type="button"
                                       className="remove-btn"
                                       title="Retirer du planning"
-                                      onClick={() => removeMeal(planned.id)}
+                                      onClick={() => handleRemoveMeal(planned.id)}
                                     >
                                       ✕
                                     </button>
@@ -327,7 +339,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm remove-meal-btn"
-                                onClick={() => removeMeal(planned.id)}
+                                onClick={() => handleRemoveMeal(planned.id)}
                                 title="Supprimer"
                               >
                                 ✕

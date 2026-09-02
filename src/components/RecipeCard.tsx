@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { deleteRecipe, updateRecipeWithIngredients } from "../app/actions/recipes";
 
 type Category = { id: string; name: string };
@@ -31,6 +31,7 @@ const CATEGORY_EMOJIS: Record<string, string> = {
 export default function RecipeCard({ recipe, categories }: { recipe: Recipe; categories: Category[] }) {
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   const [title, setTitle] = useState(recipe.title);
   const [urlSource, setUrlSource] = useState(recipe.urlSource ?? "");
@@ -52,7 +53,7 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
 
   const handleAddIngredient = () => {
     if (!ingName.trim()) return;
-    setIngredients([...ingredients, { name: ingName.trim(), categoryId: ingCategoryId, quantity: ingQty }]);
+    setIngredients([...ingredients, { name: ingName.trim(), categoryId: ingCategoryId || categories[0]?.id || "", quantity: ingQty }]);
     setIngName(""); setIngQty("");
   };
 
@@ -64,16 +65,22 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
     if (e.key === "Enter") { e.preventDefault(); handleAddIngredient(); }
   };
 
-  const handleSave = async () => {
-    await updateRecipeWithIngredients({ id: recipe.id, title, urlSource, instructions, ingredients });
-    setEditing(false);
+  const handleSave = () => {
+    startTransition(async () => {
+      await updateRecipeWithIngredients({ id: recipe.id, title, urlSource, instructions, ingredients });
+      setEditing(false);
+    });
   };
 
-  const handleDelete = async () => { await deleteRecipe(recipe.id); };
+  const handleDelete = () => {
+    startTransition(async () => {
+      await deleteRecipe(recipe.id);
+    });
+  };
 
   if (editing) {
     return (
-      <div className="card" style={{ border: "2px solid var(--primary)" }}>
+      <div className="card" style={{ border: "2px solid var(--primary)", opacity: isPending ? 0.6 : 1 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <div className="input-group" style={{ marginBottom: 0 }}>
             <label className="input-label">Titre *</label>
@@ -117,8 +124,8 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
           </div>
 
           <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button className="btn btn-primary" onClick={handleSave}>💾 Enregistrer</button>
-            <button className="btn" onClick={() => setEditing(false)} style={{ background: "var(--border)", color: "var(--text-primary)" }}>Annuler</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={isPending}>💾 Enregistrer</button>
+            <button className="btn" onClick={() => setEditing(false)} disabled={isPending} style={{ background: "var(--border)", color: "var(--text-primary)" }}>Annuler</button>
           </div>
         </div>
       </div>
@@ -126,13 +133,13 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   }
 
   return (
-    <div className="card" style={{ position: "relative" }}>
+    <div className="card" style={{ position: "relative", opacity: isPending ? 0.6 : 1 }}>
       <div style={{ position: "absolute", top: "1rem", right: "1rem", display: "flex", gap: "0.5rem" }}>
         <button onClick={() => setEditing(true)} title="Modifier" style={{ background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "0.4rem 0.6rem", cursor: "pointer" }}>✏️</button>
         {confirmDelete ? (
           <>
-            <button onClick={handleDelete} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.4rem 0.75rem", cursor: "pointer", fontWeight: 600, fontSize: "0.875rem" }}>Confirmer</button>
-            <button onClick={() => setConfirmDelete(false)} style={{ background: "var(--border)", border: "none", borderRadius: "var(--radius-md)", padding: "0.4rem 0.6rem", cursor: "pointer" }}>✕</button>
+            <button onClick={handleDelete} disabled={isPending} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.4rem 0.75rem", cursor: "pointer", fontWeight: 600, fontSize: "0.875rem" }}>Confirmer</button>
+            <button onClick={() => setConfirmDelete(false)} disabled={isPending} style={{ background: "var(--border)", border: "none", borderRadius: "var(--radius-md)", padding: "0.4rem 0.6rem", cursor: "pointer" }}>✕</button>
           </>
         ) : (
           <button onClick={() => setConfirmDelete(true)} title="Supprimer" style={{ background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "0.4rem 0.6rem", cursor: "pointer" }}>🗑️</button>

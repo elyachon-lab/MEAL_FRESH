@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { createRecipeWithIngredients } from "../app/actions/recipes";
 
 type Category = { id: string; name: string };
@@ -27,7 +27,7 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
   const [ingQty, setIngQty] = useState("");
   const [ingCategoryId, setIngCategoryId] = useState(categories[0]?.id ?? "");
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
@@ -57,50 +57,48 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       setMessage({ text: "Veuillez entrer un titre de recette.", type: "error" });
       return;
     }
 
-    setIsSubmitting(true);
     setMessage(null);
 
-    try {
-      // Si un ingrédient est en cours de saisie dans le champ texte sans avoir été ajouté avec le bouton +
-      let finalIngredients = [...ingredients];
-      if (ingName.trim()) {
-        const catId = ingCategoryId || categories[0]?.id || "";
-        finalIngredients.push({ name: ingName.trim(), categoryId: catId, quantity: ingQty });
+    startTransition(async () => {
+      try {
+        let finalIngredients = [...ingredients];
+        if (ingName.trim()) {
+          const catId = ingCategoryId || categories[0]?.id || "";
+          finalIngredients.push({ name: ingName.trim(), categoryId: catId, quantity: ingQty });
+        }
+
+        await createRecipeWithIngredients({
+          title,
+          urlSource,
+          instructions,
+          ingredients: finalIngredients,
+        });
+
+        setTitle("");
+        setUrlSource("");
+        setInstructions("");
+        setIngredients([]);
+        setIngName("");
+        setIngQty("");
+
+        setMessage({ text: "✅ Recette enregistrée dans la banque avec succès !", type: "success" });
+
+        if (onSuccess) {
+          onSuccess();
+        }
+
+        setTimeout(() => setMessage(null), 4000);
+      } catch (err: any) {
+        setMessage({ text: err?.message || "Erreur lors de l'enregistrement.", type: "error" });
       }
-
-      await createRecipeWithIngredients({
-        title,
-        urlSource,
-        instructions,
-        ingredients: finalIngredients,
-      });
-
-      setTitle("");
-      setUrlSource("");
-      setInstructions("");
-      setIngredients([]);
-      setIngName("");
-      setIngQty("");
-
-      setMessage({ text: "✅ Recette enregistrée dans la banque avec succès !", type: "success" });
-
-      if (onSuccess) {
-        onSuccess();
-      }
-
-      setTimeout(() => setMessage(null), 4000);
-    } catch (err: any) {
-      setMessage({ text: err?.message || "Erreur lors de l'enregistrement.", type: "error" });
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name ?? "Général";
@@ -228,10 +226,10 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
       <button
         type="submit"
         className="btn btn-primary"
-        disabled={isSubmitting}
+        disabled={isPending}
         style={{ marginTop: "0.25rem", padding: "0.875rem", width: "100%" }}
       >
-        {isSubmitting ? "Enregistrement en cours..." : "💾 Enregistrer la recette"}
+        {isPending ? "Enregistrement en cours..." : "💾 Enregistrer la recette"}
       </button>
     </form>
   );
