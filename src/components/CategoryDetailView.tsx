@@ -16,6 +16,40 @@ type Category = {
   ingredients: Ingredient[];
 };
 
+function getIngredientEmoji(name: string, categoryName: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("poulet") || n.includes("dinde") || n.includes("volaille")) return "🍗";
+  if (n.includes("boeuf") || n.includes("viande") || n.includes("steak")) return "🥩";
+  if (n.includes("saumon") || n.includes("poisson") || n.includes("thon") || n.includes("crevette")) return "🐟";
+  if (n.includes("oeuf") || n.includes("œuf")) return "🥚";
+  if (n.includes("brocoli") || n.includes("chou")) return "🥦";
+  if (n.includes("tomate")) return "🍅";
+  if (n.includes("carotte")) return "🥕";
+  if (n.includes("avocat")) return "🥑";
+  if (n.includes("patate") || n.includes("pomme de terre")) return "🥔";
+  if (n.includes("salade") || n.includes("épinard") || n.includes("laitue")) return "🥬";
+  if (n.includes("oignon") || n.includes("ail")) return "🧄";
+  if (n.includes("champignon")) return "🍄";
+  if (n.includes("pâte") || n.includes("riz") || n.includes("blé")) return "🌾";
+  if (n.includes("pain") || n.includes("brioche")) return "🥖";
+  if (n.includes("fromage") || n.includes("mozzarella") || n.includes("emmental") || n.includes("comté")) return "🧀";
+  if (n.includes("lait") || n.includes("crème") || n.includes("yaourt")) return "🥛";
+  if (n.includes("huile") || n.includes("beurre")) return "🧈";
+  if (n.includes("pomme")) return "🍎";
+  if (n.includes("banane")) return "🍌";
+  if (n.includes("citron")) return "🍋";
+  if (n.includes("fraise")) return "🍓";
+  if (n.includes("chocolat")) return "🍫";
+  
+  if (categoryName.includes("Protéines")) return "🥩";
+  if (categoryName.includes("Légumes")) return "🥦";
+  if (categoryName.includes("Fruits")) return "🍎";
+  if (categoryName.includes("Glucides")) return "🌾";
+  if (categoryName.includes("Produits Laitiers")) return "🧀";
+  if (categoryName.includes("Matières Grasses")) return "🧈";
+  return "🍽️";
+}
+
 export default function CategoryDetailView({
   initialCategory,
   addIngredientAction,
@@ -24,6 +58,7 @@ export default function CategoryDetailView({
   addIngredientAction: (formData: FormData) => Promise<void>;
 }) {
   const [category, setCategory] = useState<Category>(initialCategory);
+  const [selectedIngId, setSelectedIngId] = useState<string | null>(null);
 
   const refreshCategoryData = useCallback(() => {
     const localRecipes = getLocalRecipes();
@@ -48,7 +83,6 @@ export default function CategoryDetailView({
         const catId = ingLine.ingredient?.category?.id || ingLine.categoryId;
         const catName = ingLine.ingredient?.category?.name || ingLine.categoryName;
 
-        // Correspondance robuste : par ID direct, ou par nom de catégorie exact
         const isMatch =
           (catId && catId === initialCategory.id) ||
           (catName && catName.toLowerCase() === initialCategory.name.toLowerCase()) ||
@@ -62,14 +96,13 @@ export default function CategoryDetailView({
             recipes: [],
           };
 
-          // Vérifier si cette recette est déjà enregistrée sous cet ingrédient
           const hasRecipe = existingIng.recipes.some(
             (r: any) => r.recipe.id === rec.id || r.recipe.title.toLowerCase() === rec.title.toLowerCase()
           );
           
           if (!hasRecipe) {
             existingIng.recipes.push({
-              recipe: { id: rec.id, title: rec.title },
+              recipe: { id: rec.id, title: rec.title, ingredients: rec.ingredients, instructions: rec.instructions },
               quantity: ingLine.quantity || null,
             });
           }
@@ -98,6 +131,27 @@ export default function CategoryDetailView({
     };
   }, [refreshCategoryData]);
 
+  // Ingrédient actuellement sélectionné (ou null pour "Tous")
+  const selectedIngredient = category.ingredients.find(i => i.id === selectedIngId);
+
+  // Liste des recettes à afficher (soit pour l'ingrédient cliqué, soit toutes les recettes de la catégorie)
+  const displayedRecipesMap = new Map<string, { recipe: any; quantities: string[] }>();
+
+  const ingredientsToProcess = selectedIngredient ? [selectedIngredient] : category.ingredients;
+
+  ingredientsToProcess.forEach(ing => {
+    ing.recipes.forEach((ri: any) => {
+      const recId = ri.recipe.id || ri.recipe.title;
+      const existing = displayedRecipesMap.get(recId) || { recipe: ri.recipe, quantities: [] };
+      if (ri.quantity) {
+        existing.quantities.push(`${ing.name}: ${ri.quantity}`);
+      }
+      displayedRecipesMap.set(recId, existing);
+    });
+  });
+
+  const displayedRecipesList = Array.from(displayedRecipesMap.values());
+
   return (
     <div>
       <div className="page-header">
@@ -106,14 +160,221 @@ export default function CategoryDetailView({
             ← Retour aux catégories
           </Link>
           <h1>🥑 {category.name}</h1>
+          <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+            Cliquez sur un ingrédient ci-dessous pour filtrer les recettes associées.
+          </p>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "2rem", alignItems: "start" }}>
+      {/* ── BARRE DE SÉLECTION D'INGRÉDIENTS À LA JOW (CERCOLES INTERACTIFS) ── */}
+      <div style={{ marginBottom: "2rem", background: "var(--surface)", padding: "1.25rem", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h2 style={{ fontSize: "1.1rem", margin: 0 }}>
+            🛒 Ingrédients de la catégorie ({category.ingredients.length})
+          </h2>
+          {selectedIngId && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setSelectedIngId(null)}
+              style={{ fontSize: "0.8rem", color: "var(--primary)" }}
+            >
+              ✕ Réinitialiser le filtre
+            </button>
+          )}
+        </div>
+
+        {category.ingredients.length === 0 ? (
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+            Aucun ingrédient dans cette catégorie. Enregistrez une recette avec des ingrédients !
+          </p>
+        ) : (
+          <div style={{ display: "flex", gap: "1rem", overflowX: "auto", paddingBottom: "0.5rem", scrollbarWidth: "thin" }}>
+            {/* Bulle "Tous" */}
+            <button
+              type="button"
+              onClick={() => setSelectedIngId(null)}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                gap: "0.4rem",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  width: "64px",
+                  height: "64px",
+                  borderRadius: "50%",
+                  background: selectedIngId === null ? "var(--primary-light)" : "var(--bg)",
+                  border: `2px solid ${selectedIngId === null ? "var(--primary)" : "var(--border)"}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.6rem",
+                  boxShadow: selectedIngId === null ? "var(--shadow-sm)" : "none",
+                  transition: "all 0.2s ease",
+                  transform: selectedIngId === null ? "scale(1.05)" : "scale(1)",
+                }}
+              >
+                🌟
+              </div>
+              <span style={{ fontSize: "0.8rem", fontWeight: 700, color: selectedIngId === null ? "var(--primary)" : "var(--text-secondary)" }}>
+                Tous
+              </span>
+            </button>
+
+            {/* Bulles d'ingrédients circulaires (Style Jow) */}
+            {category.ingredients.map((ing) => {
+              const isSelected = selectedIngId === ing.id;
+              const emoji = getIngredientEmoji(ing.name, category.name);
+              return (
+                <button
+                  key={ing.id}
+                  type="button"
+                  onClick={() => setSelectedIngId(isSelected ? null : ing.id)}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    gap: "0.4rem",
+                    flexShrink: 0,
+                    maxWidth: "85px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "64px",
+                      height: "64px",
+                      borderRadius: "50%",
+                      background: isSelected ? "var(--accent-light)" : "var(--surface)",
+                      border: `2.5px solid ${isSelected ? "var(--accent)" : "var(--border)"}`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "1.75rem",
+                      boxShadow: isSelected ? "0 4px 14px rgba(121, 216, 128, 0.35)" : "var(--shadow-xs)",
+                      transition: "all 0.2s ease",
+                      position: "relative",
+                      transform: isSelected ? "translateY(-3px) scale(1.05)" : "scale(1)",
+                    }}
+                  >
+                    {emoji}
+                    {isSelected && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "-2px",
+                          right: "-2px",
+                          background: "var(--accent)",
+                          color: "#fff",
+                          borderRadius: "50%",
+                          width: "20px",
+                          height: "20px",
+                          fontSize: "0.7rem",
+                          fontWeight: "bold",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: "0 2px 5px rgba(0,0,0,0.15)",
+                        }}
+                      >
+                        ✓
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: isSelected ? 700 : 500,
+                      color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
+                      textAlign: "center",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      width: "100%",
+                    }}
+                  >
+                    {ing.name}
+                  </span>
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "-0.2rem" }}>
+                    {ing.recipes.length} recette{ing.recipes.length > 1 ? "s" : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── SECTION RECETTES ASSOCIÉES À LA JOW ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "1.75rem", alignItems: "start" }}>
         
-        {/* Formulaire d'ajout manuel d'un ingrédient */}
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+            <h2 style={{ fontSize: "1.25rem", margin: 0 }}>
+              📖 Recettes avec {selectedIngredient ? `"${selectedIngredient.name}"` : `la catégorie ${category.name}`}
+            </h2>
+            <span className="badge badge-accent">{displayedRecipesList.length} trouvée{displayedRecipesList.length > 1 ? "s" : ""}</span>
+          </div>
+
+          {displayedRecipesList.length === 0 ? (
+            <div className="card panel" style={{ textAlign: "center", padding: "3rem" }}>
+              <p style={{ color: "var(--text-secondary)", marginBottom: "1rem" }}>
+                Aucune recette enregistrée avec {selectedIngredient ? `"${selectedIngredient.name}"` : "cette catégorie"} pour le moment.
+              </p>
+              <Link href="/recipes" className="btn btn-primary btn-sm">
+                ➕ Créer une recette
+              </Link>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.25rem" }}>
+              {displayedRecipesList.map(({ recipe, quantities }, idx) => (
+                <div key={`${recipe.id}_${idx}`} className="card" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
+                      <span style={{ fontSize: "1.2rem" }}>🍲</span>
+                      <h3 style={{ margin: 0, fontSize: "1.1rem" }}>{recipe.title}</h3>
+                    </div>
+
+                    {quantities.length > 0 && (
+                      <div style={{ marginBottom: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                        {quantities.map((q, qIdx) => (
+                          <span key={qIdx} className="badge badge-accent" style={{ fontSize: "0.78rem" }}>
+                            {q}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {recipe.instructions && (
+                      <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: "0.75rem" }}>
+                        {recipe.instructions.length > 100 ? recipe.instructions.substring(0, 100) + "…" : recipe.instructions}
+                      </p>
+                    )}
+                  </div>
+
+                  <div style={{ paddingTop: "0.75rem", borderTop: "1px dashed var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <Link href="/planning" className="btn btn-outline btn-sm" style={{ width: "100%", textAlign: "center" }}>
+                      📅 Planifier dans le semainier
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Panneau latéral : Formulaire d'ajout rapide d'ingrédient */}
         <div className="card panel" style={{ height: "fit-content" }}>
-          <h2 style={{ fontSize: "1.15rem", marginBottom: "1rem" }}>➕ Ajouter un Ingrédient</h2>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: "1rem" }}>➕ Ingrédient Manquant ?</h2>
           <form action={addIngredientAction} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div className="input-group" style={{ marginBottom: 0 }}>
               <label className="input-label" htmlFor="name">Nom de l'ingrédient</label>
@@ -125,41 +386,6 @@ export default function CategoryDetailView({
           </form>
         </div>
 
-        {/* Liste des ingrédients et leurs recettes associées */}
-        <div>
-          <h2 style={{ fontSize: "1.25rem", marginBottom: "1rem" }}>
-            Ingrédients enregistrés ({category.ingredients.length})
-          </h2>
-          
-          {category.ingredients.length === 0 ? (
-            <div className="card panel" style={{ textAlign: "center", padding: "3rem" }}>
-              <p style={{ color: "var(--text-secondary)" }}>Aucun ingrédient dans cette catégorie pour le moment. Enregistrez une recette avec des ingrédients !</p>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
-              {category.ingredients.map((ing) => (
-                <div key={ing.id} className="card panel" style={{ padding: "1.25rem" }}>
-                  <h3 style={{ color: "var(--primary)", marginBottom: "0.5rem" }}>{ing.name}</h3>
-                  
-                  {ing.recipes.length > 0 ? (
-                    <div>
-                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 600 }}>Présent dans :</span>
-                      <ul style={{ marginTop: "0.4rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                        {ing.recipes.map((ri: any, rIdx: number) => (
-                          <li key={`${ri.recipe.id}_${rIdx}`} style={{ fontSize: "0.85rem", background: "var(--primary-light)", padding: "0.35rem 0.65rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--primary-mid)" }}>
-                            <strong>📖 {ri.recipe.title}</strong> {ri.quantity && <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>({ri.quantity})</span>}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0 }}>Aucune recette n'utilise cet ingrédient.</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
