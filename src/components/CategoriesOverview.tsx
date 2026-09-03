@@ -32,10 +32,21 @@ export default function CategoriesOverview({ initialCategories }: { initialCateg
     localRecipes.forEach(rec => {
       (rec.ingredients || []).forEach(ingLine => {
         const ingName = ingLine.ingredient?.name || ingLine.name;
+        if (!ingName) return;
+
         const catId = ingLine.ingredient?.category?.id || ingLine.categoryId;
-        if (ingName && catId && map.has(catId)) {
-          map.get(catId)!.add(ingName.toLowerCase().trim());
-        }
+        const catName = ingLine.ingredient?.category?.name || ingLine.categoryName;
+
+        initialCategories.forEach(cat => {
+          const isMatch =
+            (catId && catId === cat.id) ||
+            (catName && catName.toLowerCase() === cat.name.toLowerCase()) ||
+            (catId && catId.toLowerCase() === cat.name.toLowerCase());
+
+          if (isMatch) {
+            map.get(cat.id)?.add(ingName.toLowerCase().trim());
+          }
+        });
       });
     });
 

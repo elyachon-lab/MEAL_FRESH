@@ -83,6 +83,7 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
           urlSource,
           instructions,
           ingredients: finalIngredients,
+          categories,
         });
 
         // 2. Envoyer au serveur

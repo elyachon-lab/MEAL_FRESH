@@ -46,18 +46,33 @@ export function saveLocalRecipe(data: {
   urlSource?: string | null;
   instructions?: string | null;
   ingredients?: any[];
+  categories?: { id: string; name: string }[];
 }): LocalRecipe {
   const current = getLocalRecipes();
   const id = data.id || "rec_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
   
+  const categoriesList = data.categories || [];
+  const getCatName = (catId: string, fallbackName?: string) => {
+    if (fallbackName && fallbackName !== "Général") return fallbackName;
+    const found = categoriesList.find(c => c.id === catId || c.name.toLowerCase() === catId.toLowerCase());
+    if (found) return found.name;
+    return fallbackName || "Général";
+  };
+
   const formattedIngredients = (data.ingredients || []).map(ing => {
-    if (ing.ingredient) return ing;
+    const rawIngName = ing.ingredient?.name || ing.name || "Ingrédient";
+    const catId = ing.ingredient?.category?.id || ing.categoryId || "cat_default";
+    const catName = getCatName(catId, ing.ingredient?.category?.name || ing.categoryName);
+
     return {
       quantity: ing.quantity || null,
+      name: rawIngName,
+      categoryId: catId,
+      categoryName: catName,
       ingredient: {
-        id: "ing_" + Math.random().toString(36).substring(2, 6),
-        name: ing.name || "Ingrédient",
-        category: { id: ing.categoryId || "cat_default", name: "Général" }
+        id: ing.ingredient?.id || "ing_" + Math.random().toString(36).substring(2, 6),
+        name: rawIngName,
+        category: { id: catId, name: catName }
       }
     };
   });

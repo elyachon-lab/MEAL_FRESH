@@ -46,11 +46,13 @@ export default function CategoryDetailView({
         if (!ingName) return;
 
         const catId = ingLine.ingredient?.category?.id || ingLine.categoryId;
-        const catName = ingLine.ingredient?.category?.name;
+        const catName = ingLine.ingredient?.category?.name || ingLine.categoryName;
 
-        // Vérifier si cet ingrédient appartient à cette catégorie (par ID ou par Nom)
-        const isMatch = (catId && catId === initialCategory.id) || 
-                        (catName && catName.toLowerCase() === initialCategory.name.toLowerCase());
+        // Correspondance robuste : par ID direct, ou par nom de catégorie exact
+        const isMatch =
+          (catId && catId === initialCategory.id) ||
+          (catName && catName.toLowerCase() === initialCategory.name.toLowerCase()) ||
+          (catId && catId.toLowerCase() === initialCategory.name.toLowerCase());
 
         if (isMatch) {
           const key = ingName.toLowerCase().trim();
@@ -61,7 +63,10 @@ export default function CategoryDetailView({
           };
 
           // Vérifier si cette recette est déjà enregistrée sous cet ingrédient
-          const hasRecipe = existingIng.recipes.some((r: any) => r.recipe.id === rec.id || r.recipe.title.toLowerCase() === rec.title.toLowerCase());
+          const hasRecipe = existingIng.recipes.some(
+            (r: any) => r.recipe.id === rec.id || r.recipe.title.toLowerCase() === rec.title.toLowerCase()
+          );
+          
           if (!hasRecipe) {
             existingIng.recipes.push({
               recipe: { id: rec.id, title: rec.title },
