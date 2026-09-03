@@ -1,14 +1,27 @@
 "use client";
 
 import React, { useState, useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { format, startOfWeek, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
 import { assignMeal, removeMeal } from "../app/actions/planning";
+import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
 import RecipeForm from "./RecipeForm";
 
 type Category = { id: string; name: string };
-type Recipe = { id: string; title: string };
+type IngredientLine = { name: string; categoryId: string; quantity: string };
+type Recipe = {
+  id: string;
+  title: string;
+  urlSource?: string | null;
+  instructions?: string | null;
+  ingredients?: {
+    ingredient: { id: string; name: string; category: { id: string; name: string } };
+    quantity: string | null;
+  }[];
+};
+
 type PlannedMeal = { id: string; recipe: Recipe; date: Date | string; mealTime: string };
 
 type PlannerUIProps = {
@@ -28,17 +41,63 @@ const MEALS = [
 type MealKey = "Matin" | "Midi" | "Goûter" | "Soir";
 
 export default function PlannerUI({ recipes, plannings, categories = [] }: PlannerUIProps) {
+  const router = useRouter();
   const [isReady, setIsReady] = useState(false);
   const [activeDayIndex, setActiveDayIndex] = useState<number | null>(null);
   const [mobileMode, setMobileMode] = useState<"all" | "tab">("all");
   const [showFormModal, setShowFormModal] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
+  // État formulaire édition rapide recette
+  const [editTitle, setEditTitle] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editInstructions, setEditInstructions] = useState("");
+  const [editIngredients, setEditIngredients] = useState<IngredientLine[]>([]);
+
+  const [isPending, startTransition] = useTransition();
   const startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   useEffect(() => {
     setIsReady(true);
   }, []);
+
+  const startEditRecipe = (recipe: Recipe) => {
+    setEditingRecipe(recipe);
+    setEditTitle(recipe.title);
+    setEditUrl(recipe.urlSource ?? "");
+    setEditInstructions(recipe.instructions ?? "");
+    setEditIngredients(
+      recipe.ingredients?.map(ri => ({
+        name: ri.ingredient.name,
+        categoryId: ri.ingredient.category.id,
+        quantity: ri.quantity ?? ""
+      })) ?? []
+    );
+  };
+
+  const handleSaveEditRecipe = () => {
+    if (!editingRecipe || !editTitle.trim()) return;
+
+    startTransition(async () => {
+      await updateRecipeWithIngredients({
+        id: editingRecipe.id,
+        title: editTitle.trim(),
+        urlSource: editUrl.trim(),
+        instructions: editInstructions.trim(),
+        ingredients: editIngredients,
+      });
+      setEditingRecipe(null);
+      router.refresh();
+    });
+  };
+
+  const handleDeleteBankRecipe = (id: string) => {
+    startTransition(async () => {
+      await deleteRecipe(id);
+      if (editingRecipe?.id === id) setEditingRecipe(null);
+      router.refresh();
+    });
+  };
 
   const onDragEnd = (result: DropResult) => {
     const { source, destination, draggableId } = result;
@@ -68,6 +127,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           await removeMeal(planningId);
         }
       }
+      router.refresh();
     });
   };
 
@@ -83,12 +143,14 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
       } else {
         await assignMeal(recipeId, targetDateStr, mealTime, currentPlanningId);
       }
+      router.refresh();
     });
   };
 
   const handleRemoveMeal = (planningId: string) => {
     startTransition(async () => {
       await removeMeal(planningId);
+      router.refresh();
     });
   };
 
@@ -109,23 +171,48 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              onClick={() => setShowFormModal(!showFormModal)}
+              onClick={() => { setShowFormModal(!showFormModal); setEditingRecipe(null); }}
               style={{ marginTop: "0.4rem" }}
             >
               {showFormModal ? "✕ Fermer" : "➕ Créer une recette"}
             </button>
           </div>
 
-          {/* Formulaire rapide de création intégré dans la Banque */}
+          {/* Formulaire de création rapide */}
           {showFormModal && (
             <div style={{ background: "var(--bg)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", border: "1.5px solid var(--primary)" }}>
               <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>➕ Nouvelle Recette dans la Banque</h3>
-              <RecipeForm categories={categories} onSuccess={() => setShowFormModal(false)} />
+              <RecipeForm categories={categories} onSuccess={() => { setShowFormModal(false); router.refresh(); }} />
+            </div>
+          )}
+
+          {/* Formulaire d'édition rapide de recette dans la banque */}
+          {editingRecipe && (
+            <div style={{ background: "var(--surface-alt)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", border: "2px solid var(--accent)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                <h3 style={{ fontSize: "0.95rem", margin: 0 }}>✏️ Modifier : {editingRecipe.title}</h3>
+                <button type="button" onClick={() => setEditingRecipe(null)} className="btn btn-ghost btn-sm" style={{ padding: "0.2rem 0.5rem" }}>✕</button>
+              </div>
+
+              <div className="input-group" style={{ marginBottom: "0.75rem" }}>
+                <label className="input-label" style={{ fontSize: "0.8rem" }}>Titre *</label>
+                <input className="input-field input-sm" style={{ width: "100%" }} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+              </div>
+
+              <div className="input-group" style={{ marginBottom: "0.75rem" }}>
+                <label className="input-label" style={{ fontSize: "0.8rem" }}>Instructions</label>
+                <textarea className="input-field" rows={2} style={{ fontSize: "0.85rem" }} value={editInstructions} onChange={(e) => setEditInstructions(e.target.value)} />
+              </div>
+
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+                <button type="button" onClick={handleSaveEditRecipe} className="btn btn-primary btn-sm" disabled={isPending}>💾 Enregistrer</button>
+                <button type="button" onClick={() => handleDeleteBankRecipe(editingRecipe.id)} className="btn btn-danger btn-sm" disabled={isPending}>🗑️ Supprimer</button>
+              </div>
             </div>
           )}
 
           <p className="text-sm text-secondary" style={{ marginBottom: "1rem" }}>
-            Glissez une recette vers un créneau ou sélectionnez-la dans les menus déroulants.
+            Glissez une recette vers un créneau ou cliquez sur ✏️ pour la modifier.
           </p>
 
           <Droppable droppableId="recipe-bank">
@@ -157,9 +244,30 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                           {...provided.draggableProps}
                           {...provided.dragHandleProps}
                           className={`recipe-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
+                          style={{
+                            ...provided.draggableProps.style,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          }}
                         >
-                          <span style={{ marginRight: "0.4rem" }}>🍲</span>
-                          {recipe.title}
+                          <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <span>🍲</span>
+                            <strong>{recipe.title}</strong>
+                          </span>
+
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: "0.2rem 0.4rem", fontSize: "0.85rem" }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startEditRecipe(recipe);
+                            }}
+                            title="Modifier la recette"
+                          >
+                            ✏️
+                          </button>
                         </div>
                       )}
                     </Draggable>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createRecipeWithIngredients } from "../app/actions/recipes";
 
 type Category = { id: string; name: string };
@@ -18,6 +19,7 @@ const CATEGORY_EMOJIS: Record<string, string> = {
 type IngredientLine = { name: string; categoryId: string; quantity: string };
 
 export default function RecipeForm({ categories, onSuccess }: { categories: Category[]; onSuccess?: () => void }) {
+  const router = useRouter();
   const [title, setTitle] = useState("");
   const [urlSource, setUrlSource] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -94,6 +96,8 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
         setIngQty("");
 
         setMessage({ text: "✅ Recette enregistrée dans la banque avec succès !", type: "success" });
+
+        router.refresh();
 
         if (onSuccess) {
           onSuccess();
