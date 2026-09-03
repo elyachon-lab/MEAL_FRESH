@@ -1,56 +1,46 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createRecipeWithIngredients } from "../app/actions/recipes";
 import { saveLocalRecipe } from "../lib/storage";
+import { getIngredientEmoji } from "../lib/emojis";
 
 type Category = { id: string; name: string };
+type IngredientInput = { name: string; categoryId: string; quantity: string };
 
-const CATEGORY_EMOJIS: Record<string, string> = {
-  "Fruits": "🍎",
-  "Légumes": "🥦",
-  "Protéines": "🥩",
-  "Glucides": "🌾",
-  "Produits Laitiers": "🧀",
-  "Matières Grasses": "🫒",
-  "Épices & Condiments": "🌶️",
+type RecipeFormProps = {
+  categories: Category[];
+  onSuccess?: () => void;
 };
 
-type IngredientLine = { name: string; categoryId: string; quantity: string };
-
-export default function RecipeForm({ categories, onSuccess }: { categories: Category[]; onSuccess?: () => void }) {
+export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
   const [title, setTitle] = useState("");
   const [urlSource, setUrlSource] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [ingredients, setIngredients] = useState<IngredientLine[]>([]);
+  const [ingredients, setIngredients] = useState<IngredientInput[]>([]);
 
   const [ingName, setIngName] = useState("");
   const [ingQty, setIngQty] = useState("");
   const [ingCategoryId, setIngCategoryId] = useState(categories[0]?.id ?? "");
 
-  const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  useEffect(() => {
-    if (!ingCategoryId && categories.length > 0) {
-      setIngCategoryId(categories[0].id);
-    }
-  }, [categories, ingCategoryId]);
+  const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name ?? "Général";
 
   const handleAddIngredient = () => {
     if (!ingName.trim()) return;
     const catId = ingCategoryId || categories[0]?.id || "";
-    setIngredients([...ingredients, { name: ingName.trim(), categoryId: catId, quantity: ingQty }]);
+    setIngredients([...ingredients, { name: ingName.trim(), categoryId: catId, quantity: ingQty.trim() }]);
     setIngName("");
     setIngQty("");
   };
 
-  const handleRemove = (i: number) => {
-    const arr = [...ingredients];
-    arr.splice(i, 1);
-    setIngredients(arr);
+  const handleRemove = (index: number) => {
+    setIngredients(ingredients.filter((_, i) => i !== index));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -60,18 +50,16 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      setMessage({ text: "Veuillez entrer un titre de recette.", type: "error" });
+      setMessage({ text: "Le titre de la recette est obligatoire.", type: "error" });
       return;
     }
 
-    setMessage(null);
-
     startTransition(async () => {
       try {
-        let finalIngredients = [...ingredients];
+        const finalIngredients = [...ingredients];
         if (ingName.trim()) {
           const catId = ingCategoryId || categories[0]?.id || "";
           finalIngredients.push({ name: ingName.trim(), categoryId: catId, quantity: ingQty });
@@ -120,9 +108,6 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
       }
     });
   };
-
-  const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name ?? "Général";
-  const getCategoryEmoji = (id: string) => CATEGORY_EMOJIS[getCategoryName(id)] ?? "🍽️";
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -192,7 +177,7 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
               {ingredients.map((ing, i) => (
                 <li key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--surface-hover)", padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", fontSize: "0.875rem" }}>
                   <span>
-                    <span style={{ marginRight: "0.4rem" }}>{getCategoryEmoji(ing.categoryId)}</span>
+                    <span style={{ marginRight: "0.4rem" }}>{getIngredientEmoji(ing.name, getCategoryName(ing.categoryId))}</span>
                     {ing.quantity && <b>{ing.quantity} </b>}
                     {ing.name}
                     <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", marginLeft: "0.4rem" }}>({getCategoryName(ing.categoryId)})</span>
@@ -210,7 +195,7 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
               value={ingName}
               onChange={e => setIngName(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Nom ingrédient (ex: Tomate)"
+              placeholder="Ingrédient (ex: Riz, Poulet)"
               style={{ marginBottom: 0 }}
             />
             <input
@@ -232,7 +217,7 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
             >
               {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>
-                  {CATEGORY_EMOJIS[cat.name] ?? "🍽️"} {cat.name}
+                  {cat.name}
                 </option>
               ))}
             </select>

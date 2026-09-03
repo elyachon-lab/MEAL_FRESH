@@ -6,6 +6,7 @@ import { startOfWeek, addDays } from "date-fns";
 import { deleteRecipe, updateRecipeWithIngredients } from "../app/actions/recipes";
 import { assignMeal } from "../app/actions/planning";
 import { deleteLocalRecipe, saveLocalRecipe } from "../lib/storage";
+import { getIngredientEmoji } from "../lib/emojis";
 
 type Category = { id: string; name: string };
 type RecipeIngredient = {
@@ -21,16 +22,6 @@ type Recipe = {
 };
 
 type IngredientLine = { name: string; categoryId: string; quantity: string };
-
-const CATEGORY_EMOJIS: Record<string, string> = {
-  "Fruits": "🍎",
-  "Légumes": "🥦",
-  "Protéines": "🥩",
-  "Glucides": "🌾",
-  "Produits Laitiers": "🧀",
-  "Matières Grasses": "🫒",
-  "Épices & Condiments": "🌶️",
-};
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 const MEALS = [
@@ -67,7 +58,6 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   const [ingCategoryId, setIngCategoryId] = useState(categories[0]?.id ?? "");
 
   const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name ?? "";
-  const getCategoryEmoji = (id: string) => CATEGORY_EMOJIS[getCategoryName(id)] ?? "🍽️";
 
   const handleAddIngredient = () => {
     if (!ingName.trim()) return;
@@ -147,20 +137,20 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
                 <ul style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   {ingredients.map((ing, i) => (
                     <li key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--surface-hover)", padding: "0.4rem 0.75rem", borderRadius: "var(--radius-md)", fontSize: "0.875rem" }}>
-                      <span>{getCategoryEmoji(ing.categoryId)} {ing.quantity && <b>{ing.quantity} </b>}{ing.name}</span>
+                      <span>{getIngredientEmoji(ing.name, getCategoryName(ing.categoryId))} {ing.quantity && <b>{ing.quantity} </b>}{ing.name}</span>
                       <button type="button" onClick={() => handleRemoveIngredient(i)} style={{ color: "#ef4444", border: "none", background: "transparent", cursor: "pointer" }}>✕</button>
                     </li>
                   ))}
                 </ul>
               )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: "0.5rem" }}>
-                <input className="input-field" value={ingName} onChange={e => setIngName(e.target.value)} onKeyDown={handleKeyDown} placeholder="Nom de l'ingrédient" style={{ marginBottom: 0 }} />
+                <input className="input-field" value={ingName} onChange={e => setIngName(e.target.value)} onKeyDown={handleKeyDown} placeholder="Nom (ex: Riz, Poulet)" style={{ marginBottom: 0 }} />
                 <input className="input-field" value={ingQty} onChange={e => setIngQty(e.target.value)} onKeyDown={handleKeyDown} placeholder="Qté" style={{ marginBottom: 0 }} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.5rem" }}>
                 <select className="input-field" value={ingCategoryId} onChange={e => setIngCategoryId(e.target.value)} style={{ marginBottom: 0 }}>
                   {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{CATEGORY_EMOJIS[cat.name] ?? "🍽️"} {cat.name}</option>
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
                 </select>
                 <button type="button" onClick={handleAddIngredient} className="btn btn-primary" style={{ padding: "0.5rem 0.75rem" }}>+ Ajouter</button>
@@ -205,7 +195,7 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
           <div style={{ marginTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
             {recipe.ingredients.map(ri => (
               <span key={ri.ingredient.id} style={{ background: "var(--primary-light)", border: "1px solid var(--primary-mid)", borderRadius: "999px", padding: "0.2rem 0.65rem", fontSize: "0.78rem", color: "var(--text-primary)" }}>
-                {CATEGORY_EMOJIS[ri.ingredient.category.name] ?? "🍽️"} {ri.quantity ? `${ri.quantity} ` : ""}{ri.ingredient.name}
+                {getIngredientEmoji(ri.ingredient.name, ri.ingredient.category.name)} {ri.quantity ? `${ri.quantity} ` : ""}{ri.ingredient.name}
               </span>
             ))}
           </div>

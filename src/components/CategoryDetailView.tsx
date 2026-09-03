@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { getLocalRecipes } from "../lib/storage";
+import { getIngredientEmoji } from "../lib/emojis";
 
 type Ingredient = {
   id: string;
@@ -15,40 +16,6 @@ type Category = {
   name: string;
   ingredients: Ingredient[];
 };
-
-function getIngredientEmoji(name: string, categoryName: string): string {
-  const n = name.toLowerCase();
-  if (n.includes("poulet") || n.includes("dinde") || n.includes("volaille")) return "🍗";
-  if (n.includes("boeuf") || n.includes("viande") || n.includes("steak")) return "🥩";
-  if (n.includes("saumon") || n.includes("poisson") || n.includes("thon") || n.includes("crevette")) return "🐟";
-  if (n.includes("oeuf") || n.includes("œuf")) return "🥚";
-  if (n.includes("brocoli") || n.includes("chou")) return "🥦";
-  if (n.includes("tomate")) return "🍅";
-  if (n.includes("carotte")) return "🥕";
-  if (n.includes("avocat")) return "🥑";
-  if (n.includes("patate") || n.includes("pomme de terre")) return "🥔";
-  if (n.includes("salade") || n.includes("épinard") || n.includes("laitue")) return "🥬";
-  if (n.includes("oignon") || n.includes("ail")) return "🧄";
-  if (n.includes("champignon")) return "🍄";
-  if (n.includes("pâte") || n.includes("riz") || n.includes("blé")) return "🌾";
-  if (n.includes("pain") || n.includes("brioche")) return "🥖";
-  if (n.includes("fromage") || n.includes("mozzarella") || n.includes("emmental") || n.includes("comté")) return "🧀";
-  if (n.includes("lait") || n.includes("crème") || n.includes("yaourt")) return "🥛";
-  if (n.includes("huile") || n.includes("beurre")) return "🧈";
-  if (n.includes("pomme")) return "🍎";
-  if (n.includes("banane")) return "🍌";
-  if (n.includes("citron")) return "🍋";
-  if (n.includes("fraise")) return "🍓";
-  if (n.includes("chocolat")) return "🍫";
-  
-  if (categoryName.includes("Protéines")) return "🥩";
-  if (categoryName.includes("Légumes")) return "🥦";
-  if (categoryName.includes("Fruits")) return "🍎";
-  if (categoryName.includes("Glucides")) return "🌾";
-  if (categoryName.includes("Produits Laitiers")) return "🧀";
-  if (categoryName.includes("Matières Grasses")) return "🧈";
-  return "🍽️";
-}
 
 export default function CategoryDetailView({
   initialCategory,
@@ -166,7 +133,7 @@ export default function CategoryDetailView({
         </div>
       </div>
 
-      {/* ── BARRE DE SÉLECTION D'INGRÉDIENTS À LA JOW (CERCOLES INTERACTIFS) ── */}
+      {/* ── BARRE DE SÉLECTION D'INGRÉDIENTS À LA JOW (BULLES CIRCULAIRES) ── */}
       <div style={{ marginBottom: "2rem", background: "var(--surface)", padding: "1.25rem", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h2 style={{ fontSize: "1.1rem", margin: 0 }}>
@@ -228,7 +195,7 @@ export default function CategoryDetailView({
               </span>
             </button>
 
-            {/* Bulles d'ingrédients circulaires (Style Jow) */}
+            {/* Bulles d'ingrédients circulaires avec Emojis Précis (Style Jow) */}
             {category.ingredients.map((ing) => {
               const isSelected = selectedIngId === ing.id;
               const emoji = getIngredientEmoji(ing.name, category.name);
