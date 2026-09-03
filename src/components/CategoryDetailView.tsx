@@ -101,19 +101,16 @@ export default function CategoryDetailView({
   // Ingrédient actuellement sélectionné (ou null pour "Tous")
   const selectedIngredient = category.ingredients.find(i => i.id === selectedIngId);
 
-  // Liste des recettes à afficher (soit pour l'ingrédient cliqué, soit toutes les recettes de la catégorie)
-  const displayedRecipesMap = new Map<string, { recipe: any; quantities: string[] }>();
-
+  // Map unique des recettes à afficher
+  const displayedRecipesMap = new Map<string, any>();
   const ingredientsToProcess = selectedIngredient ? [selectedIngredient] : category.ingredients;
 
   ingredientsToProcess.forEach(ing => {
     ing.recipes.forEach((ri: any) => {
       const recId = ri.recipe.id || ri.recipe.title;
-      const existing = displayedRecipesMap.get(recId) || { recipe: ri.recipe, quantities: [] };
-      if (ri.quantity) {
-        existing.quantities.push(`${ing.name}: ${ri.quantity}`);
+      if (!displayedRecipesMap.has(recId)) {
+        displayedRecipesMap.set(recId, ri.recipe);
       }
-      displayedRecipesMap.set(recId, existing);
     });
   });
 
@@ -128,7 +125,7 @@ export default function CategoryDetailView({
           </Link>
           <h1>🥑 {category.name}</h1>
           <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-            Cliquez sur un ingrédient ci-dessous pour filtrer les recettes associées.
+            Sélectionnez un ingrédient ci-dessous pour afficher ses recettes associées.
           </p>
         </div>
       </div>
@@ -146,14 +143,14 @@ export default function CategoryDetailView({
               onClick={() => setSelectedIngId(null)}
               style={{ fontSize: "0.8rem", color: "var(--primary)" }}
             >
-              ✕ Réinitialiser le filtre
+              ✕ Voir toutes les recettes de la catégorie
             </button>
           )}
         </div>
 
         {category.ingredients.length === 0 ? (
           <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-            Aucun ingrédient dans cette catégorie. Enregistrez une recette avec des ingrédients !
+            Aucun ingrédient dans cette catégorie pour le moment.
           </p>
         ) : (
           <div style={{ display: "flex", gap: "1rem", overflowX: "auto", paddingBottom: "0.5rem", scrollbarWidth: "thin" }}>
@@ -281,21 +278,21 @@ export default function CategoryDetailView({
         )}
       </div>
 
-      {/* ── SECTION RECETTES ASSOCIÉES À LA JOW ── */}
+      {/* ── SECTION RECETTES LINKÉES A LA CATÉGORIE ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "1.75rem", alignItems: "start" }}>
         
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1.25rem" }}>
             <h2 style={{ fontSize: "1.25rem", margin: 0 }}>
-              📖 Recettes avec {selectedIngredient ? `"${selectedIngredient.name}"` : `la catégorie ${category.name}`}
+              📖 Recettes de la catégorie {selectedIngredient ? `"${selectedIngredient.name}"` : `"${category.name}"`}
             </h2>
-            <span className="badge badge-accent">{displayedRecipesList.length} trouvée{displayedRecipesList.length > 1 ? "s" : ""}</span>
+            <span className="badge badge-accent">{displayedRecipesList.length} recette{displayedRecipesList.length > 1 ? "s" : ""}</span>
           </div>
 
           {displayedRecipesList.length === 0 ? (
             <div className="card panel" style={{ textAlign: "center", padding: "3rem" }}>
               <p style={{ color: "var(--text-secondary)", marginBottom: "1rem" }}>
-                Aucune recette enregistrée avec {selectedIngredient ? `"${selectedIngredient.name}"` : "cette catégorie"} pour le moment.
+                Aucune recette liée à {selectedIngredient ? `"${selectedIngredient.name}"` : "cette catégorie"} pour le moment.
               </p>
               <Link href="/recipes" className="btn btn-primary btn-sm">
                 ➕ Créer une recette
@@ -303,21 +300,36 @@ export default function CategoryDetailView({
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.25rem" }}>
-              {displayedRecipesList.map(({ recipe, quantities }, idx) => (
+              {displayedRecipesList.map((recipe, idx) => (
                 <div key={`${recipe.id}_${idx}`} className="card" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.56rem" }}>
                       <span style={{ fontSize: "1.2rem" }}>🍲</span>
-                      <h3 style={{ margin: 0, fontSize: "1.1rem" }}>{recipe.title}</h3>
+                      <h3 style={{ margin: 0, fontSize: "1.1rem", color: "var(--text-primary)" }}>{recipe.title}</h3>
                     </div>
 
-                    {quantities.length > 0 && (
+                    {/* Affichage complet des badges ingrédients de la recette */}
+                    {recipe.ingredients && recipe.ingredients.length > 0 && (
                       <div style={{ marginBottom: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-                        {quantities.map((q, qIdx) => (
-                          <span key={qIdx} className="badge badge-accent" style={{ fontSize: "0.78rem" }}>
-                            {q}
-                          </span>
-                        ))}
+                        {recipe.ingredients.map((ri: any, qIdx: number) => {
+                          const ingName = ri.ingredient?.name || ri.name;
+                          const catName = ri.ingredient?.category?.name || ri.categoryName || category.name;
+                          const qty = ri.quantity ? `${ri.quantity} ` : "";
+                          const emoji = getIngredientEmoji(ingName, catName);
+                          const isMatch = selectedIngredient
+                            ? ingName.toLowerCase().includes(selectedIngredient.name.toLowerCase())
+                            : true;
+
+                          return (
+                            <span
+                              key={qIdx}
+                              className={`badge ${isMatch ? 'badge-accent' : 'badge-neutral'}`}
+                              style={{ fontSize: "0.78rem" }}
+                            >
+                              {emoji} {qty}{ingName}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -328,7 +340,7 @@ export default function CategoryDetailView({
                     )}
                   </div>
 
-                  <div style={{ paddingTop: "0.75rem", borderTop: "1px dashed var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ paddingTop: "0.75rem", borderTop: "1px dashed var(--border)" }}>
                     <Link href="/planning" className="btn btn-outline btn-sm" style={{ width: "100%", textAlign: "center" }}>
                       📅 Planifier dans le semainier
                     </Link>

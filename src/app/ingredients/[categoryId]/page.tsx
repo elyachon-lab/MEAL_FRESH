@@ -10,7 +10,7 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
   await ensureDatabaseSchema();
   const { categoryId } = await params;
 
-  const category = await prisma.category.findUnique({
+  let category = await prisma.category.findUnique({
     where: { id: categoryId },
     include: {
       ingredients: {
@@ -18,13 +18,54 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
         include: {
           recipes: {
             include: {
-              recipe: true
+              recipe: {
+                include: {
+                  ingredients: {
+                    include: {
+                      ingredient: {
+                        include: { category: true }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
       }
     }
   });
+
+  if (!category) {
+    const allCats = await prisma.category.findMany({
+      include: {
+        ingredients: {
+          orderBy: { name: "asc" },
+          include: {
+            recipes: {
+              include: {
+                recipe: {
+                  include: {
+                    ingredients: {
+                      include: {
+                        ingredient: {
+                          include: { category: true }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    category = allCats.find(
+      c => c.id === categoryId || c.name.toLowerCase() === categoryId.toLowerCase()
+    ) || null;
+  }
 
   if (!category) {
     return (
@@ -37,17 +78,19 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
     );
   }
 
+  const activeCategory = category;
+
   // Action serveur pour ajouter un nouvel ingrédient à la catégorie
   async function addIngredientAction(formData: FormData) {
     "use server";
     await ensureDatabaseSchema();
     const name = (formData.get("name") as string)?.trim();
-    if (name) {
+    if (name && activeCategory) {
       await prisma.ingredient.create({
-        data: { name, categoryId }
+        data: { name, categoryId: activeCategory.id }
       });
-      revalidatePath(`/ingredients/${categoryId}`);
-      revalidatePath("/ingredients");
+      revalidatePath(`/ingredients/${activeCategory.id}`);
+      revalidatePath("/ingredients", "layout");
       revalidatePath("/recipes");
       revalidatePath("/planning");
     }
@@ -55,7 +98,7 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
 
   return (
     <CategoryDetailView
-      initialCategory={JSON.parse(JSON.stringify(category))}
+      initialCategory={JSON.parse(JSON.stringify(activeCategory))}
       addIngredientAction={addIngredientAction}
     />
   );
