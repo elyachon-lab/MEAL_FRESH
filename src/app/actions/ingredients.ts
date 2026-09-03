@@ -10,6 +10,7 @@ const DEFAULT_CATEGORIES = [
   "Légumes",
   "Fruits",
   "Produits Laitiers",
+  "Sucré",
   "Matières Grasses",
   "Épices & Condiments"
 ];
@@ -30,24 +31,23 @@ export async function getCategories() {
       }
     });
 
-    // Si aucune catégorie n'existe encore, on peuple automatiquement les catégories par défaut
-    if (categories.length === 0) {
-      for (const name of DEFAULT_CATEGORIES) {
-        await prisma.category.upsert({
-          where: { name },
-          update: {},
-          create: { name },
-        });
-      }
-      categories = await prisma.category.findMany({
-        orderBy: { name: "asc" },
-        include: {
-          _count: {
-            select: { ingredients: true }
-          }
-        }
+    // Si aucune catégorie n'existe encore ou si la catégorie "Sucré" manque, on l'ajoute automatiquement
+    for (const name of DEFAULT_CATEGORIES) {
+      await prisma.category.upsert({
+        where: { name },
+        update: {},
+        create: { name },
       });
     }
+
+    categories = await prisma.category.findMany({
+      orderBy: { name: "asc" },
+      include: {
+        _count: {
+          select: { ingredients: true }
+        }
+      }
+    });
 
     return toPlainObject(categories);
   } catch (err) {
@@ -100,7 +100,7 @@ export async function findOrCreateIngredient(name: string, categoryIdOrName?: st
     }
   }
 
-  // 3. Si la catégorie n'est pas encore trouvée, inférer automatiquement à partir du nom de l'ingrédient (ex: Riz -> Glucides)
+  // 3. Si la catégorie n'est pas encore trouvée, inférer automatiquement à partir du nom de l'ingrédient (ex: Riz -> Glucides, Chocolat -> Sucré)
   if (!targetCatId) {
     const inferredName = inferCategoryName(trimmed);
     const foundInferred = validCats.find((c: any) => c.name.toLowerCase() === inferredName.toLowerCase());

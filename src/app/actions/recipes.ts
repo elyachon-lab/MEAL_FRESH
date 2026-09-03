@@ -3,6 +3,7 @@
 import prisma, { ensureDatabaseSchema } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { findOrCreateIngredient, getCategories } from "./ingredients";
+import { seedAllRecipes } from "../../../prisma/seed";
 
 function toPlainObject<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
@@ -11,7 +12,7 @@ function toPlainObject<T>(data: T): T {
 export async function getRecipes() {
   try {
     await ensureDatabaseSchema();
-    const recipes = await prisma.recipe.findMany({
+    let recipes = await prisma.recipe.findMany({
       orderBy: { createdAt: "desc" },
       include: {
         ingredients: {
@@ -23,6 +24,22 @@ export async function getRecipes() {
         }
       }
     });
+
+    if (recipes.length === 0) {
+      await seedAllRecipes();
+      recipes = await prisma.recipe.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          ingredients: {
+            include: {
+              ingredient: {
+                include: { category: true }
+              }
+            }
+          }
+        }
+      });
+    }
 
     return toPlainObject(recipes);
   } catch (err: any) {
@@ -181,6 +198,6 @@ export async function updateRecipeWithIngredients(data: {
     return { success: true };
   } catch (err: any) {
     console.error("Error in updateRecipeWithIngredients:", err);
-    return { success: false, error: err?.message || "Erreur me lors de la mise à jour." };
+    return { success: false, error: err?.message || "Erreur lors de la mise à jour." };
   }
 }
