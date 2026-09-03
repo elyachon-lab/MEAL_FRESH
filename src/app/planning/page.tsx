@@ -3,7 +3,6 @@ import { getWeeklyPlanning } from "../actions/planning";
 import { getCategories } from "../actions/ingredients";
 import { startOfWeek } from "date-fns";
 import PlannerUI from "@/components/PlannerUI";
-import Image from "next/image";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,16 +24,6 @@ export default async function PlanningPage() {
           <p style={{ color: "var(--text-secondary)", marginTop: ".25rem" }}>
             Organisez vos repas de la semaine (Matin, Midi, Goûter, Soir) en quelques clics.
           </p>
-        </div>
-
-        <div style={{ position: "relative", width: "90px", height: "90px", flexShrink: 0 }}>
-          <Image
-            src="/zest-planner.png"
-            alt="Mascotte Zest Planner"
-            width={90}
-            height={90}
-            style={{ objectFit: "contain" }}
-          />
         </div>
       </div>
       <PlannerUI recipes={recipes} plannings={plannings} categories={categories} />

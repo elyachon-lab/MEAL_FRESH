@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 
 const features = [
   {
@@ -48,7 +47,7 @@ export default function Home() {
           gap: "2rem",
         }}
       >
-        <div style={{ maxWidth: 580, zIndex: 1 }}>
+        <div style={{ maxWidth: "100%", zIndex: 1 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "#FFFFFF", padding: "0.4rem 1rem", borderRadius: "999px", boxShadow: "var(--shadow-xs)", marginBottom: "1.25rem" }}>
             <span style={{ fontSize: "1.1rem" }}>🍊</span>
             <span style={{ fontFamily: "Fredoka, sans-serif", fontWeight: 700, color: "var(--primary)", fontSize: "0.95rem" }}>
@@ -62,7 +61,7 @@ export default function Home() {
           </h1>
 
           <p style={{ fontSize: "1.1rem", color: "var(--text-secondary)", marginBottom: "2rem", lineHeight: 1.6 }}>
-            Planifiez vos repas de la semaine, sauvegardez vos recettes favorites et conservez le contrôle sur vos dépenses de courses avec la mascotte Zest !
+            Planifiez vos repas de la semaine, sauvegardez vos recettes favorites et conservez le contrôle sur vos dépenses de courses !
           </p>
 
           <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
@@ -73,18 +72,6 @@ export default function Home() {
               💰 Mon Budget
             </Link>
           </div>
-        </div>
-
-        {/* Mascotte Zest d'Accueil */}
-        <div style={{ position: "relative", width: "260px", height: "260px", flexShrink: 0, margin: "0 auto" }}>
-          <Image
-            src="/zest-waving.png"
-            alt="Mascotte Zest - Meal Fresh"
-            width={260}
-            height={260}
-            style={{ objectFit: "contain" }}
-            priority
-          />
         </div>
       </section>
 

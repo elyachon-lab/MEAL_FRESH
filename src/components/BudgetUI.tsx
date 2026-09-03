@@ -135,16 +135,6 @@ export default function BudgetUI({ budget }: BudgetUIProps) {
             </p>
           </div>
 
-          <div style={{ position: "relative", width: "90px", height: "90px", flexShrink: 0 }}>
-            <Image
-              src="/zest-budget.png"
-              alt="Mascotte Zest Budget"
-              width={90}
-              height={90}
-              style={{ objectFit: "contain" }}
-            />
-          </div>
-
           <div className="budget-edit-box">
 
             <span className="text-xs text-muted">Budget Global Prévu</span>

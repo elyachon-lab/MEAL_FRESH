@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Meal Fresh — Mon Planificateur de Repas & Budget",
-  description: "Menu de la semaine, sans pépin 🍊. Planifiez vos repas, sauvegardez vos recettes et gérez votre budget.",
+  description: "Planifiez vos repas, sauvegardez vos recettes et gérez votre budget.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -19,15 +19,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        {/* ── Top Navbar ── */}
+        {/* ── Top Navbar (sans logo) ── */}
         <header className="top-navbar">
-          <Link href="/" className="navbar-brand">
-            <span style={{ color: "var(--text-primary)", fontWeight: 700 }}>Meal</span>
-            <span style={{ color: "var(--primary)", fontWeight: 700, marginLeft: "2px" }}>Fresh</span>
-            <span style={{ fontSize: "1.1rem", marginLeft: "4px" }}>🍃</span>
-          </Link>
-
           <nav className="navbar-nav">
+            <Link href="/" className="nav-link">🏠 Accueil</Link>
             <Link href="/planning" className="nav-link">📅 Planning</Link>
             <Link href="/recipes" className="nav-link">📖 Recettes</Link>
             <Link href="/ingredients" className="nav-link">🥑 Ingrédients</Link>
