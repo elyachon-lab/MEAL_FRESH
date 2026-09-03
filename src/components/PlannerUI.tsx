@@ -144,7 +144,8 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
     const isFromBank = source.droppableId === "recipe-bank";
     const recipeId = isFromBank ? draggableId.replace("recipe_", "") : null;
-    
+    const rawPlanningId = !isFromBank ? draggableId.replace("planning_", "").split("_")[0] : null;
+
     // Dépot dans le semainier
     if (destination.droppableId !== "recipe-bank") {
       const [dayStr, mealTime] = destination.droppableId.split("-");
@@ -153,7 +154,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
       const recipeToAssign = isFromBank
         ? allRecipes.find(r => r.id === recipeId)
-        : localPlannings.find(p => p.id === draggableId.replace("planning_", ""))?.recipe;
+        : localPlannings.find(p => p.id === rawPlanningId || p.id === draggableId.replace("planning_", ""))?.recipe;
 
       if (!recipeToAssign) return;
 
@@ -167,27 +168,31 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
       // 1. SAUVEGARDE LOCALE ET MISE À JOUR OPTIMISTE DU PLANNING (PERMANENT)
       saveLocalPlanning(newMeal);
-      setLocalPlannings(prev => [...prev, newMeal]);
+
+      if (!isFromBank && rawPlanningId) {
+        removeLocalPlanning(rawPlanningId);
+        setLocalPlannings(prev => [...prev.filter(p => p.id !== rawPlanningId), newMeal]);
+      } else {
+        setLocalPlannings(prev => [...prev, newMeal]);
+      }
 
       // 2. SYNCHRONISATION SERVEUR EN ARRIÈRE-PLAN
       startTransition(async () => {
         if (isFromBank && recipeId) {
           await assignMeal(recipeId, targetDate.toISOString(), mealTime as MealKey);
-        } else {
-          const planningId = draggableId.replace("planning_", "");
-          await assignMeal(recipeToAssign.id, targetDate.toISOString(), mealTime as MealKey, planningId);
+        } else if (rawPlanningId) {
+          await assignMeal(recipeToAssign.id, targetDate.toISOString(), mealTime as MealKey, rawPlanningId);
         }
         router.refresh();
       });
     } else {
       // Dépot vers la banque (retrait du planning)
-      if (!isFromBank) {
-        const planningId = draggableId.replace("planning_", "");
-        removeLocalPlanning(planningId);
-        setLocalPlannings(prev => prev.filter(p => p.id !== planningId));
+      if (!isFromBank && rawPlanningId) {
+        removeLocalPlanning(rawPlanningId);
+        setLocalPlannings(prev => prev.filter(p => p.id !== rawPlanningId));
         
         startTransition(async () => {
-          await removeMeal(planningId);
+          await removeMeal(rawPlanningId);
           router.refresh();
         });
       }
@@ -484,7 +489,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                             {plannedMeals.length > 0 ? (
                               <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                                 {plannedMeals.map((planned, pIdx) => (
-                                  <Draggable key={`planning_${planned.id}`} draggableId={`planning_${planned.id}`} index={pIdx}>
+                                  <Draggable key={`planning_${planned.id}_${pIdx}`} draggableId={`planning_${planned.id}_${pIdx}`} index={pIdx}>
                                     {(provided, snapshot) => (
                                       <div
                                         ref={provided.innerRef}
@@ -492,7 +497,9 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                                         {...provided.dragHandleProps}
                                         className={`planned-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
                                       >
-                                        <div className="planned-title">{planned.recipe.title}</div>
+                                        <div className="planned-title" title={planned.recipe.title}>
+                                          🍲 {planned.recipe.title}
+                                        </div>
                                         <button
                                           type="button"
                                           className="remove-btn"
