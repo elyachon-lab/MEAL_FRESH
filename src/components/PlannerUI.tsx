@@ -84,6 +84,13 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
+  // Modale de détails d'une recette (au clic)
+  const [viewingRecipeModal, setViewingRecipeModal] = useState<Recipe | null>(null);
+
+  // État des éléments cochés dans la liste de courses de la semaine
+  const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({});
+  const [copiedNotification, setCopiedNotification] = useState(false);
+
   // Filtre par catégorie dans la Banque de Recettes
   const [selectedBankCategory, setSelectedBankCategory] = useState<string>("ALL");
 
@@ -104,6 +111,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   const baseStartDate = startOfWeek(new Date(), { weekStartsOn: 1 });
   const startDate = addWeeks(baseStartDate, weekOffset);
+  const endDate = addDays(startDate, 6);
 
   useEffect(() => {
     setIsReady(true);
@@ -130,6 +138,61 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     });
     return groups;
   }, [allRecipes]);
+
+  // ── CALCUL DE LA LISTE DE COURSES AUTOMATIQUE DE LA SEMAINE ──
+  const weeklyPlannedMeals = useMemo(() => {
+    const startKey = getFormattedDateKey(startDate);
+    const endKey = getFormattedDateKey(endDate);
+
+    return localPlannings.filter((p) => {
+      const pKey = getFormattedDateKey(p.date);
+      return pKey >= startKey && pKey <= endKey;
+    });
+  }, [localPlannings, startDate, endDate]);
+
+  const weeklyGroceryGrouped = useMemo(() => {
+    const map = new Map<string, { name: string; quantity: string; categoryName: string; count: number }>();
+
+    weeklyPlannedMeals.forEach((planned) => {
+      const ings = planned.recipe.ingredients || [];
+      ings.forEach((ri: any) => {
+        const rawName = ri.ingredient?.name || ri.name || "Ingrédient";
+        const catName = ri.ingredient?.category?.name || ri.categoryName || inferCategoryName(rawName);
+        const qty = ri.quantity || "";
+
+        const key = rawName.toLowerCase().trim();
+        if (map.has(key)) {
+          const existing = map.get(key)!;
+          existing.count += 1;
+          if (qty && existing.quantity && !existing.quantity.includes(qty)) {
+            existing.quantity += `, ${qty}`;
+          } else if (qty && !existing.quantity) {
+            existing.quantity = qty;
+          }
+        } else {
+          map.set(key, {
+            name: rawName,
+            quantity: qty,
+            categoryName: catName,
+            count: 1,
+          });
+        }
+      });
+    });
+
+    const grouped: Record<string, { name: string; quantity: string; count: number }[]> = {};
+    Array.from(map.values()).forEach((item) => {
+      const cat = item.categoryName || "Autre";
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(item);
+    });
+
+    return grouped;
+  }, [weeklyPlannedMeals]);
+
+  const totalIngredientsCount = useMemo(() => {
+    return Object.values(weeklyGroceryGrouped).reduce((sum, list) => sum + list.length, 0);
+  }, [weeklyGroceryGrouped]);
 
   const startEditRecipe = (recipe: Recipe) => {
     setEditingRecipe(recipe);
@@ -194,7 +257,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
       const [dayStr, mealTime] = destination.droppableId.split("-");
       const dayOffset = parseInt(dayStr, 10);
       const targetDate = addDays(startDate, dayOffset);
-      targetDate.setHours(12, 0, 0, 0); // Normaliser à 12:00:00 pour éviter tout décalage d'un jour
+      targetDate.setHours(12, 0, 0, 0); // Normaliser à 12:00:00
 
       const recipeToAssign = isFromBank
         ? allRecipes.find(r => r.id === recipeId)
@@ -280,6 +343,32 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     });
   };
 
+  const toggleCheckIngredient = (ingName: string) => {
+    setCheckedIngredients(prev => ({
+      ...prev,
+      [ingName]: !prev[ingName]
+    }));
+  };
+
+  const copyGroceryListToClipboard = () => {
+    let text = `🛒 Liste de courses MealFresh - Semaine du ${format(startDate, "dd/MM")} au ${format(endDate, "dd/MM/yyyy")}\n\n`;
+    Object.entries(weeklyGroceryGrouped).forEach(([catName, list]) => {
+      const emoji = CATEGORY_EMOJIS[catName] || "🛒";
+      text += `${emoji} ${catName.toUpperCase()} :\n`;
+      list.forEach(item => {
+        const isChecked = checkedIngredients[item.name] ? "[x]" : "[ ]";
+        const qtyStr = item.quantity ? ` (${item.quantity})` : "";
+        const countStr = item.count > 1 ? ` x${item.count}` : "";
+        text += `  ${isChecked} ${item.name}${qtyStr}${countStr}\n`;
+      });
+      text += "\n";
+    });
+
+    navigator.clipboard.writeText(text);
+    setCopiedNotification(true);
+    setTimeout(() => setCopiedNotification(false), 3000);
+  };
+
   if (!isReady) return null;
 
   return (
@@ -361,7 +450,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           )}
 
           <p className="text-sm text-secondary" style={{ marginBottom: "1rem" }}>
-            Glissez vos recettes triées sur les créneaux du semainier.
+            Glissez vos recettes triées sur les créneaux du semainier. Cliquez sur une recette pour voir ses ingrédients.
           </p>
 
           <Droppable droppableId="recipe-bank">
@@ -397,12 +486,13 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                             {...provided.draggableProps}
                             {...provided.dragHandleProps}
                             className={`recipe-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
+                            onClick={() => setViewingRecipeModal(recipe)}
                             style={{
                               ...provided.draggableProps.style,
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
-                              cursor: snapshot.isDragging ? "grabbing" : "grab"
+                              cursor: "pointer"
                             }}
                           >
                             <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, gap: "0.15rem" }}>
@@ -411,7 +501,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                                 <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{recipe.title}</strong>
                               </span>
                               <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.2rem" }}>
-                                {catEmoji} {primaryCat}
+                                {catEmoji} {primaryCat} • {recipe.ingredients?.length || 0} ingr.
                               </span>
                             </div>
 
@@ -446,7 +536,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
               <div>
                 <h2>📅 Semainier de Repas</h2>
                 <p className="text-sm text-secondary">
-                  Semaine du {format(startDate, "dd MMMM", { locale: fr })} au {format(addDays(startDate, 6), "dd MMMM yyyy", { locale: fr })}
+                  Semaine du {format(startDate, "dd MMMM", { locale: fr })} au {format(endDate, "dd MMMM yyyy", { locale: fr })}
                 </p>
               </div>
 
@@ -571,15 +661,21 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                                         {...provided.draggableProps}
                                         {...provided.dragHandleProps}
                                         className={`planned-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
+                                        onClick={() => setViewingRecipeModal(planned.recipe)}
+                                        style={{ ...provided.draggableProps.style, cursor: "pointer" }}
+                                        title="Cliquer pour voir la liste des ingrédients"
                                       >
-                                        <div className="planned-title" title={planned.recipe.title}>
+                                        <div className="planned-title" style={{ fontWeight: 600 }}>
                                           🍲 {planned.recipe.title}
                                         </div>
                                         <button
                                           type="button"
                                           className="remove-btn"
                                           title="Retirer du planning"
-                                          onClick={() => handleRemoveMeal(planned.id)}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRemoveMeal(planned.id);
+                                          }}
                                         >
                                           ✕
                                         </button>
@@ -626,8 +722,20 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
                       return (
                         <div key={m.key} className="mobile-meal-slot-box" style={{ background: "var(--surface-hover)", borderRadius: "var(--radius-md)", padding: "0.75rem" }}>
-                          <div className="mobile-meal-slot-header">
-                            <span>{m.icon}</span> <strong>{m.label}</strong>
+                          <div className="mobile-meal-slot-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <span>{m.icon}</span> <strong>{m.label}</strong>
+                            </div>
+                            {primaryPlanned && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ padding: "0.15rem 0.4rem", fontSize: "0.75rem" }}
+                                onClick={() => setViewingRecipeModal(primaryPlanned.recipe)}
+                              >
+                                👁️ Voir ingrédients
+                              </button>
+                            )}
                           </div>
 
                           <div className="mobile-meal-slot-select-wrapper">
@@ -671,8 +779,243 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
             })}
           </div>
 
+          {/* ── LISTE DE COURSES AUTOMATIQUE PAR SEMAINE (EN DESSOUS DU SEMAINIER) ── */}
+          <div className="card panel" style={{ marginTop: "2rem", padding: "1.5rem", border: "2px solid var(--primary-light)", background: "var(--surface)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem" }}>
+              <div>
+                <div className="badge badge-primary mb-1">🛒 Généré automatiquement</div>
+                <h2 style={{ fontSize: "1.3rem", margin: ".25rem 0" }}>
+                  Liste des Ingrédients NÉCESSAIRES — Semaine du {format(startDate, "dd/MM")} au {format(endDate, "dd/MM")}
+                </h2>
+                <p className="text-xs text-muted" style={{ margin: 0 }}>
+                  Calculé à partir de toutes les recettes déposées dans votre semainier pour cette semaine ({weeklyPlannedMeals.length} repas planifié{weeklyPlannedMeals.length > 1 ? "s" : ""}).
+                </p>
+              </div>
+
+              {totalIngredientsCount > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={copyGroceryListToClipboard}
+                  >
+                    {copiedNotification ? "✅ Liste copiée !" : "📋 Copier la liste de courses"}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {totalIngredientsCount === 0 ? (
+              <div style={{ textAlign: "center", padding: "2.5rem 0", background: "var(--bg)", borderRadius: "var(--radius-md)", border: "1px dashed var(--border)" }}>
+                <span style={{ fontSize: "2.5rem", display: "block", marginBottom: "0.5rem" }}>🧺</span>
+                <p className="text-secondary fw-500">Aucun ingrédient pour cette semaine !</p>
+                <p className="text-xs text-muted">
+                  Glissez des recettes dans le semainier ci-dessus pour générer votre liste de courses automatique.
+                </p>
+              </div>
+            ) : (
+              <div className="grocery-categories-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1.25rem" }}>
+                {Object.entries(weeklyGroceryGrouped).map(([catName, list]) => {
+                  const emoji = CATEGORY_EMOJIS[catName] || "🛒";
+                  return (
+                    <div
+                      key={catName}
+                      style={{
+                        background: "var(--bg)",
+                        padding: "1rem",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border)"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.75rem", borderBottom: "1px solid var(--border)", paddingBottom: "0.5rem" }}>
+                        <span style={{ fontSize: "1.1rem" }}>{emoji}</span>
+                        <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>{catName}</h4>
+                        <span className="badge badge-accent" style={{ marginLeft: "auto", fontSize: "0.7rem" }}>{list.length}</span>
+                      </div>
+
+                      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {list.map((item, idx) => {
+                          const isChecked = !!checkedIngredients[item.name];
+                          const ingEmoji = getIngredientEmoji(item.name);
+
+                          return (
+                            <li
+                              key={idx}
+                              onClick={() => toggleCheckIngredient(item.name)}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                                fontSize: "0.875rem",
+                                cursor: "pointer",
+                                opacity: isChecked ? 0.5 : 1,
+                                textDecoration: isChecked ? "line-through" : "none",
+                                userSelect: "none"
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}} // Géré par onClick sur <li>
+                                style={{ accentColor: "var(--primary)", cursor: "pointer" }}
+                              />
+                              <span>{ingEmoji}</span>
+                              <span className="fw-500" style={{ flex: 1 }}>{item.name}</span>
+                              {item.quantity && (
+                                <span className="badge badge-neutral" style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}>
+                                  {item.quantity}
+                                </span>
+                              )}
+                              {item.count > 1 && (
+                                <span className="badge badge-primary" style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}>
+                                  x{item.count}
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
+
+      {/* ── MODALE POPUP DU DÉTAIL DES INGRÉDIENTS D'UNE RECETTE ── */}
+      {viewingRecipeModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setViewingRecipeModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: "1rem"
+          }}
+        >
+          <div
+            className="modal-content card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "520px",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              padding: "1.5rem",
+              borderRadius: "var(--radius-lg)",
+              background: "white",
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.2)"
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
+              <div>
+                <span className="chip" style={{ fontSize: "0.75rem", background: "var(--primary-light)", color: "var(--primary-dark)", padding: "0.2rem 0.6rem", borderRadius: "999px", fontWeight: 700 }}>
+                  {CATEGORY_EMOJIS[getRecipePrimaryCategory(viewingRecipeModal)] || "🍲"} {getRecipePrimaryCategory(viewingRecipeModal)}
+                </span>
+                <h2 style={{ fontSize: "1.4rem", marginTop: "0.4rem", marginBottom: 0 }}>🍲 {viewingRecipeModal.title}</h2>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setViewingRecipeModal(null)}
+                style={{ fontSize: "1.1rem", padding: "0.2rem 0.5rem" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Liste des Ingrédients */}
+            <div style={{ marginBottom: "1.25rem" }}>
+              <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem", color: "var(--text-main)" }}>
+                🛒 Ingrédients de la recette ({viewingRecipeModal.ingredients?.length || 0})
+              </h3>
+
+              {!viewingRecipeModal.ingredients || viewingRecipeModal.ingredients.length === 0 ? (
+                <p className="text-muted text-xs">Aucun ingrédient renseigné pour cette recette.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {viewingRecipeModal.ingredients.map((ri, idx) => {
+                    const ingName = ri.ingredient?.name || (ri as any).name || "Ingrédient";
+                    const catName = ri.ingredient?.category?.name || (ri as any).categoryName || inferCategoryName(ingName);
+                    const ingEmoji = getIngredientEmoji(ingName);
+
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "0.6rem 0.85rem",
+                          background: "var(--surface-hover)",
+                          borderRadius: "var(--radius-md)",
+                          border: "1px solid var(--border)"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <span style={{ fontSize: "1.1rem" }}>{ingEmoji}</span>
+                          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{ingName}</span>
+                          <span className="text-xs text-muted" style={{ fontStyle: "italic" }}>({catName})</span>
+                        </div>
+
+                        {ri.quantity && (
+                          <span className="badge badge-accent" style={{ fontSize: "0.75rem" }}>
+                            {ri.quantity}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Instructions */}
+            {viewingRecipeModal.instructions && (
+              <div style={{ marginBottom: "1.25rem", background: "var(--bg)", padding: "0.85rem", borderRadius: "var(--radius-md)" }}>
+                <h4 style={{ fontSize: "0.9rem", marginBottom: "0.35rem" }}>📝 Instructions / Préparation :</h4>
+                <p className="text-sm" style={{ whiteSpace: "pre-wrap", margin: 0, color: "var(--text-secondary)" }}>
+                  {viewingRecipeModal.instructions}
+                </p>
+              </div>
+            )}
+
+            {/* Actions Footer */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1.5rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => {
+                  const r = viewingRecipeModal;
+                  setViewingRecipeModal(null);
+                  startEditRecipe(r);
+                }}
+              >
+                ✏️ Modifier la recette
+              </button>
+              
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setViewingRecipeModal(null)}
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </DragDropContext>
   );
 }
