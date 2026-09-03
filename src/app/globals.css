@@ -1,50 +1,63 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
 
 /* ================================================================
-   DESIGN SYSTEM — Agrume Orange
-   Charte : Orange Jus d'Agrume · Anthracite Chaud · Vert Feuille
+   CHARTE GRAPHIQUE OFFICIELLE — MEAL FRESH
+   Couleurs :
+   - Orange Vif : #FF7A21
+   - Vert Menthe : #79D880
+   - Pastel Menthe : #D9F4E8
+   - Jaune Soleil : #FFD45C
+   - Espresso Chaud (Texte) : #352A27
+   Typographies :
+   - Logo & Titres : 'Fredoka', 'Nunito', sans-serif (Rounded)
+   - Interface & Textes : 'Poppins', sans-serif
    ================================================================ */
 
 :root {
-  /* ─── Palette ─── */
-  --primary:         #F27A24;   /* Orange agrume mûr          */
-  --primary-hover:   #da6b18;   /* Foncé au survol             */
-  --primary-light:   #FDF0E6;   /* Abricot très clair (badges) */
-  --primary-mid:     #f9d9b8;   /* Séparateurs / fond hover    */
+  /* ─── Palette Officielle Charte ─── */
+  --primary:         #FF7A21;   /* Orange Meal Fresh           */
+  --primary-hover:   #E66510;   /* Orange foncé survol         */
+  --primary-light:   #FFF2EA;   /* Orange très clair pastel    */
+  --primary-mid:     #FCD7C3;   /* Bordures abricot            */
 
-  --secondary:       #2C2C2E;   /* Anthracite chaud (texte)    */
-  --accent:          #4A7C59;   /* Vert feuille (validations)  */
-  --accent-light:    #eaf3ed;   /* Fond vert pâle              */
+  --accent:          #79D880;   /* Vert Menthe Feuille         */
+  --accent-hover:    #5EC466;   /* Vert foncé survol           */
+  --accent-light:    #D9F4E8;   /* Pastel menthe charte        */
 
-  --bg:              #FBF9F7;   /* Fond général lin/gris chaud */
-  --surface:         #FFFFFF;   /* Cartes, modales, inputs     */
-  --border:          #EBEBEB;
-  --border-strong:   #D9D9D9;
+  --yellow:          #FFD45C;   /* Jaune Soleil                */
+  --yellow-light:    #FFF8E3;
 
-  /* ─── Texte ─── */
-  --text-primary:    #2C2C2E;
-  --text-secondary:  #6B6B6B;
-  --text-muted:      #ADADAD;
+  --bg:              #FAF7F2;   /* Fond Crème Chaud / Lin doux */
+  --surface:         #FFFFFF;   /* Cartes blanches             */
+  --surface-alt:     #F4FAF6;   /* Fond teinté léger           */
+
+  --border:          #EBDED6;
+  --border-strong:   #D6C4B9;
+
+  /* ─── Texte Officiel (#352A27 Espresso Chaud) ─── */
+  --text-primary:    #352A27;
+  --text-secondary:  #6E5D57;
+  --text-muted:      #9E8C86;
 
   /* ─── Feedback ─── */
   --danger:          #E53E3E;
-  --success:         #4A7C59;
+  --success:         #79D880;
 
-  /* ─── Radius ─── */
-  --radius-sm:   6px;
-  --radius-md:   10px;
-  --radius-lg:   16px;   /* cartes */
-  --radius-xl:   20px;   /* héro, sections */
+  /* ─── Radius Arrondis Généreux ─── */
+  --radius-sm:   10px;
+  --radius-md:   16px;
+  --radius-lg:   24px;   /* Cartes */
+  --radius-xl:   32px;   /* Héro, modales */
   --radius-pill: 999px;
 
-  /* ─── Ombres ─── */
-  --shadow-xs:  0 1px 3px rgba(44,44,46,.06);
-  --shadow-sm:  0 2px 8px rgba(44,44,46,.08);
-  --shadow-md:  0 6px 20px rgba(44,44,46,.10);
-  --shadow-lg:  0 12px 36px rgba(44,44,46,.12);
+  /* ─── Ombres Douces ─── */
+  --shadow-xs:  0 2px 5px rgba(53,42,39,.04);
+  --shadow-sm:  0 4px 12px rgba(53,42,39,.06);
+  --shadow-md:  0 8px 24px rgba(53,42,39,.09);
+  --shadow-lg:  0 16px 40px rgba(53,42,39,.12);
 
   /* ─── Layout ─── */
-  --nav-h: 70px;
+  --nav-h: 74px;
 }
 
 /* ================================================================ RESET */
@@ -53,7 +66,7 @@
 html { scroll-behavior: smooth; }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   background: var(--bg);
   color: var(--text-primary);
   line-height: 1.65;
@@ -67,18 +80,19 @@ img { display: block; max-width: 100%; }
 
 /* ================================================================ TYPOGRAPHY */
 h1, h2, h3, h4, h5 {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Fredoka', 'Nunito', sans-serif;
   font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -.2px;
+  line-height: 1.25;
+  letter-spacing: -.01em;
   color: var(--text-primary);
   margin-bottom: .75rem;
 }
-h1 { font-size: clamp(1.875rem, 4.5vw, 2.875rem); font-weight: 800; }
-h2 { font-size: clamp(1.375rem, 3vw, 2.125rem); }
-h3 { font-size: 1.125rem; font-weight: 600; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; }
+h2 { font-size: clamp(1.4rem, 3vw, 2.2rem); font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 600; }
 h4 { font-size: 1rem; font-weight: 600; }
 p  { margin-bottom: .75rem; }
+
 
 /* ================================================================ LAYOUT */
 .container {

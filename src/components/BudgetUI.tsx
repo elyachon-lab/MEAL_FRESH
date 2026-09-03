@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
+import Image from "next/image";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import { updateBudgetAmount, addExpense, deleteExpense } from "../app/actions/budget";
@@ -25,10 +26,10 @@ type BudgetUIProps = {
 };
 
 const CATEGORIES = [
-  { id: "Supermarché", label: "Supermarché", icon: "🛒", color: "#F27A24" },
-  { id: "Marché", label: "Marché local", icon: "🧺", color: "#4A7C59" },
+  { id: "Supermarché", label: "Supermarché", icon: "🛒", color: "#FF7A21" },
+  { id: "Marché", label: "Marché local", icon: "🧺", color: "#79D880" },
   { id: "Boucherie", label: "Boucherie / Poissonnerie", icon: "🥩", color: "#E53E3E" },
-  { id: "Boulangerie", label: "Boulangerie", icon: "🥖", color: "#D69E2E" },
+  { id: "Boulangerie", label: "Boulangerie", icon: "🥖", color: "#FFD45C" },
   { id: "Épicerie", label: "Épicerie bio / Vrac", icon: "🥑", color: "#319795" },
   { id: "Autre", label: "Autre / Restauration", icon: "🧾", color: "#805AD5" },
 ];
@@ -125,16 +126,27 @@ export default function BudgetUI({ budget }: BudgetUIProps) {
       
       {/* ── En-tête du Budget ── */}
       <div className="budget-header-card card">
-        <div className="budget-header-main">
-          <div>
-            <div className="badge badge-neutral mb-1">💰 Suivi Financier</div>
+        <div className="budget-header-main" style={{ alignItems: "center" }}>
+          <div style={{ flex: 1 }}>
+            <div className="badge badge-accent mb-1">🧮 Économe sans pépin</div>
             <h1>Budget du Mois — <span style={{ textTransform: "capitalize" }}>{monthTitle}</span></h1>
             <p className="text-secondary text-sm">
               Gérez vos dépenses de courses, suivez votre reste à dépenser et analysez vos habitudes par semaine.
             </p>
           </div>
 
+          <div style={{ position: "relative", width: "90px", height: "90px", flexShrink: 0 }}>
+            <Image
+              src="/zest-budget.png"
+              alt="Mascotte Zest Budget"
+              width={90}
+              height={90}
+              style={{ objectFit: "contain" }}
+            />
+          </div>
+
           <div className="budget-edit-box">
+
             <span className="text-xs text-muted">Budget Global Prévu</span>
             {isEditingBudget ? (
               <form onSubmit={handleUpdateBudget} className="budget-inline-form">

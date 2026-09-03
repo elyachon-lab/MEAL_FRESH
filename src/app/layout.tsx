@@ -3,25 +3,35 @@ import "./globals.css";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "MealFresh — Mon Planificateur de Repas & Budget",
-  description: "Planifiez vos repas, gérez vos recettes, trouvez l'inspiration et suivez votre budget mensuel.",
+  title: "Meal Fresh — Mon Planificateur de Repas & Budget",
+  description: "Menu de la semaine, sans pépin 🍊. Planifiez vos repas, sauvegardez vos recettes et gérez votre budget.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Poppins:wght@300;400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body>
         {/* ── Top Navbar ── */}
         <header className="top-navbar">
           <Link href="/" className="navbar-brand">
-            🍊 MealFresh
+            <span style={{ color: "var(--text-primary)", fontWeight: 700 }}>Meal</span>
+            <span style={{ color: "var(--primary)", fontWeight: 700, marginLeft: "2px" }}>Fresh</span>
+            <span style={{ fontSize: "1.1rem", marginLeft: "4px" }}>🍃</span>
           </Link>
 
           <nav className="navbar-nav">
-            <Link href="/planning"    className="nav-link">📅 Planning</Link>
-            <Link href="/recipes"     className="nav-link">📖 Recettes</Link>
+            <Link href="/planning" className="nav-link">📅 Planning</Link>
+            <Link href="/recipes" className="nav-link">📖 Recettes</Link>
             <Link href="/ingredients" className="nav-link">🥑 Ingrédients</Link>
-            <Link href="/budget"      className="nav-link">💰 Budget</Link>
+            <Link href="/budget" className="nav-link">💰 Budget</Link>
           </nav>
 
           <Link href="/recipes" className="btn btn-primary btn-sm btn-header-action">
