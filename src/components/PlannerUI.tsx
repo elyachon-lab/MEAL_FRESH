@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from "react";
+import React, { useState, useEffect, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { format, startOfWeek, addDays, addWeeks } from "date-fns";
@@ -8,6 +8,7 @@ import { fr } from "date-fns/locale";
 import { assignMeal, removeMeal } from "../app/actions/planning";
 import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
 import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe, mergePlannings, saveLocalPlanning, removeLocalPlanning } from "../lib/storage";
+import { inferCategoryName, getIngredientEmoji } from "../lib/emojis";
 import RecipeForm from "./RecipeForm";
 
 type Category = { id: string; name: string };
@@ -41,7 +42,17 @@ const MEALS = [
 
 type MealKey = "Matin" | "Midi" | "Goûter" | "Soir";
 
-// Fonction de comparaison de dates insensible au décalage horaire UTC/Local
+const CATEGORY_EMOJIS: Record<string, string> = {
+  "Protéines": "🥩",
+  "Glucides": "🌾",
+  "Légumes": "🥦",
+  "Fruits": "🍎",
+  "Produits Laitiers": "🧀",
+  "Sucré": "🍬",
+  "Matières Grasses": "🫒",
+  "Épices & Condiments": "🌿",
+};
+
 function isSameDay(d1: Date | string, d2: Date): boolean {
   const date1 = new Date(d1);
   return (
@@ -54,6 +65,17 @@ function isSameDay(d1: Date | string, d2: Date): boolean {
   );
 }
 
+function getRecipePrimaryCategory(recipe: Recipe): string {
+  if (!recipe.ingredients || recipe.ingredients.length === 0) return "Glucides";
+  for (const ri of recipe.ingredients) {
+    const catName = ri.ingredient?.category?.name || (ri as any).categoryName;
+    if (catName && catName !== "Général") return catName;
+    const ingName = ri.ingredient?.name || (ri as any).name;
+    if (ingName) return inferCategoryName(ingName);
+  }
+  return "Glucides";
+}
+
 export default function PlannerUI({ recipes, plannings, categories = [] }: PlannerUIProps) {
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
@@ -62,14 +84,17 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
-  // État du décalage des semaines (0 = semaine actuelle, -1 = semaine précédente, +1 = suivante)
+  // Filtre par catégorie dans la Banque de Recettes
+  const [selectedBankCategory, setSelectedBankCategory] = useState<string>("ALL");
+
+  // Décalage semaine
   const [weekOffset, setWeekOffset] = useState(0);
 
-  // Recettes et Plannings combinés (serveur + persistance locale navigateur)
+  // Recettes et Plannings combinés
   const [allRecipes, setAllRecipes] = useState<Recipe[]>(recipes);
   const [localPlannings, setLocalPlannings] = useState<PlannedMeal[]>(plannings);
 
-  // État formulaire édition rapide recette
+  // Édition rapide
   const [editTitle, setEditTitle] = useState("");
   const [editUrl, setEditUrl] = useState("");
   const [editInstructions, setEditInstructions] = useState("");
@@ -77,7 +102,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   const [isPending, startTransition] = useTransition();
 
-  // Date de début de la semaine sélectionnée
   const baseStartDate = startOfWeek(new Date(), { weekStartsOn: 1 });
   const startDate = addWeeks(baseStartDate, weekOffset);
 
@@ -87,6 +111,26 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     setLocalPlannings(mergePlannings(plannings));
   }, [recipes, plannings]);
 
+  // Recettes filtrées et triées par catégorie pour la banque de gauche
+  const filteredRecipes = useMemo(() => {
+    if (selectedBankCategory === "ALL") return allRecipes;
+    return allRecipes.filter(recipe => {
+      const cat = getRecipePrimaryCategory(recipe);
+      return cat.toLowerCase().includes(selectedBankCategory.toLowerCase());
+    });
+  }, [allRecipes, selectedBankCategory]);
+
+  // Regroupement par catégories pour les menus déroulants <optgroup>
+  const recipesByCategory = useMemo(() => {
+    const groups: Record<string, Recipe[]> = {};
+    allRecipes.forEach(recipe => {
+      const cat = getRecipePrimaryCategory(recipe);
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(recipe);
+    });
+    return groups;
+  }, [allRecipes]);
+
   const startEditRecipe = (recipe: Recipe) => {
     setEditingRecipe(recipe);
     setEditTitle(recipe.title);
@@ -94,8 +138,8 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     setEditInstructions(recipe.instructions ?? "");
     setEditIngredients(
       recipe.ingredients?.map(ri => ({
-        name: ri.ingredient.name,
-        categoryId: ri.ingredient.category.id,
+        name: ri.ingredient?.name || (ri as any).name || "",
+        categoryId: ri.ingredient?.category?.id || (ri as any).categoryId || "",
         quantity: ri.quantity ?? ""
       })) ?? []
     );
@@ -146,7 +190,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     const recipeId = isFromBank ? draggableId.replace("recipe_", "") : null;
     const rawPlanningId = !isFromBank ? draggableId.replace("planning_", "").split("_")[0] : null;
 
-    // Dépot dans le semainier
     if (destination.droppableId !== "recipe-bank") {
       const [dayStr, mealTime] = destination.droppableId.split("-");
       const dayOffset = parseInt(dayStr, 10);
@@ -166,7 +209,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         mealTime,
       };
 
-      // 1. SAUVEGARDE LOCALE ET MISE À JOUR OPTIMISTE DU PLANNING (PERMANENT)
       saveLocalPlanning(newMeal);
 
       if (!isFromBank && rawPlanningId) {
@@ -176,7 +218,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         setLocalPlannings(prev => [...prev, newMeal]);
       }
 
-      // 2. SYNCHRONISATION SERVEUR EN ARRIÈRE-PLAN
       startTransition(async () => {
         if (isFromBank && recipeId) {
           await assignMeal(recipeId, targetDate.toISOString(), mealTime as MealKey);
@@ -186,7 +227,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         router.refresh();
       });
     } else {
-      // Dépot vers la banque (retrait du planning)
       if (!isFromBank && rawPlanningId) {
         removeLocalPlanning(rawPlanningId);
         setLocalPlannings(prev => prev.filter(p => p.id !== rawPlanningId));
@@ -249,7 +289,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           <div className="recipe-bank-header">
             <div>
               <h2>📖 Banque de Recettes</h2>
-              <span className="badge">{allRecipes.length} enregistrée{allRecipes.length > 1 ? "s" : ""}</span>
+              <span className="badge">{allRecipes.length} disponible{allRecipes.length > 1 ? "s" : ""}</span>
             </div>
             
             <button
@@ -262,15 +302,38 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
             </button>
           </div>
 
+          {/* ── MENU DÉROULANT DE TRI PAR CATÉGORIE EN HAUT DE LA BANQUE ── */}
+          <div className="input-group" style={{ marginBottom: "1rem" }}>
+            <label className="input-label" style={{ fontSize: "0.825rem", fontWeight: 700 }}>
+              🏷️ Trier la banque par catégorie :
+            </label>
+            <select
+              className="input-field input-sm"
+              style={{ width: "100%", fontSize: "0.875rem", fontWeight: 600 }}
+              value={selectedBankCategory}
+              onChange={(e) => setSelectedBankCategory(e.target.value)}
+            >
+              <option value="ALL">🌟 Toutes les catégories ({allRecipes.length})</option>
+              <option value="Protéines">🥩 Protéines ({recipesByCategory["Protéines"]?.length || 0})</option>
+              <option value="Glucides">🌾 Glucides ({recipesByCategory["Glucides"]?.length || 0})</option>
+              <option value="Légumes">🥦 Légumes ({recipesByCategory["Légumes"]?.length || 0})</option>
+              <option value="Sucré">🍬 Sucré ({recipesByCategory["Sucré"]?.length || 0})</option>
+              <option value="Produits Laitiers">🧀 Produits Laitiers ({recipesByCategory["Produits Laitiers"]?.length || 0})</option>
+              <option value="Fruits">🍎 Fruits ({recipesByCategory["Fruits"]?.length || 0})</option>
+              <option value="Matières Grasses">🫒 Matières Grasses ({recipesByCategory["Matières Grasses"]?.length || 0})</option>
+              <option value="Épices & Condiments">🌿 Épices ({recipesByCategory["Épices & Condiments"]?.length || 0})</option>
+            </select>
+          </div>
+
           {/* Formulaire de création rapide */}
           {showFormModal && (
             <div style={{ background: "var(--bg)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", border: "1.5px solid var(--primary)" }}>
-              <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>➕ Nouvelle Recette dans la Banque</h3>
+              <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>➕ Nouvelle Recette</h3>
               <RecipeForm categories={categories} onSuccess={() => { setShowFormModal(false); setAllRecipes(mergeRecipes(recipes)); router.refresh(); }} />
             </div>
           )}
 
-          {/* Formulaire d'édition rapide de recette dans la banque */}
+          {/* Formulaire d'édition rapide */}
           {editingRecipe && (
             <div style={{ background: "var(--surface-alt)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", border: "2px solid var(--accent)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
@@ -296,7 +359,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           )}
 
           <p className="text-sm text-secondary" style={{ marginBottom: "1rem" }}>
-            Glissez vos recettes sur n'importe quel créneau du semainier.
+            Glissez vos recettes triées sur les créneaux du semainier.
           </p>
 
           <Droppable droppableId="recipe-bank">
@@ -306,57 +369,67 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                 {...provided.droppableProps}
                 className={`recipe-bank-list ${snapshot.isDraggingOver ? 'dragging-over' : ''}`}
               >
-                {allRecipes.length === 0 ? (
+                {filteredRecipes.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
                     <p className="text-muted text-sm" style={{ marginBottom: "0.75rem" }}>
-                      Aucune recette enregistrée.
+                      Aucune recette dans cette catégorie.
                     </p>
                     <button
                       type="button"
                       className="btn btn-outline btn-sm"
-                      onClick={() => setShowFormModal(true)}
+                      onClick={() => setSelectedBankCategory("ALL")}
                     >
-                      + Ajouter votre 1ère recette
+                      Voir toutes les recettes
                     </button>
                   </div>
                 ) : (
-                  allRecipes.map((recipe, index) => (
-                    <Draggable key={`recipe_${recipe.id}`} draggableId={`recipe_${recipe.id}`} index={index}>
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                          className={`recipe-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
-                          style={{
-                            ...provided.draggableProps.style,
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            cursor: snapshot.isDragging ? "grabbing" : "grab"
-                          }}
-                        >
-                          <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                            <span>🍲</span>
-                            <strong>{recipe.title}</strong>
-                          </span>
+                  filteredRecipes.map((recipe, index) => {
+                    const primaryCat = getRecipePrimaryCategory(recipe);
+                    const catEmoji = CATEGORY_EMOJIS[primaryCat] || "🍲";
 
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: "0.2rem 0.4rem", fontSize: "0.85rem" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startEditRecipe(recipe);
+                    return (
+                      <Draggable key={`recipe_${recipe.id}`} draggableId={`recipe_${recipe.id}`} index={index}>
+                        {(provided, snapshot) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            {...provided.dragHandleProps}
+                            className={`recipe-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
+                            style={{
+                              ...provided.draggableProps.style,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              cursor: snapshot.isDragging ? "grabbing" : "grab"
                             }}
-                            title="Modifier la recette"
                           >
-                            ✏️
-                          </button>
-                        </div>
-                      )}
-                    </Draggable>
-                  ))
+                            <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, gap: "0.15rem" }}>
+                              <span style={{ display: "flex", alignItems: "center", gap: "0.35rem", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                <span>🍲</span>
+                                <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{recipe.title}</strong>
+                              </span>
+                              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.2rem" }}>
+                                {catEmoji} {primaryCat}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: "0.2rem 0.4rem", fontSize: "0.85rem" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEditRecipe(recipe);
+                              }}
+                              title="Modifier la recette"
+                            >
+                              ✏️
+                            </button>
+                          </div>
+                        )}
+                      </Draggable>
+                    );
+                  })
                 )}
                 {provided.placeholder}
               </div>
@@ -375,7 +448,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                 </p>
               </div>
 
-              {/* ── NOUVELLE BARRE DE NAVIGATION PAR SEMAINE (◀ ▶) ── */}
+              {/* ── BARRE DE NAVIGATION PAR SEMAINE (◀ ▶) ── */}
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "var(--surface-hover)", padding: "0.4rem 0.75rem", borderRadius: "999px", border: "1px solid var(--border)" }}>
                 <button
                   type="button"
@@ -406,7 +479,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                 </button>
               </div>
 
-              {/* Mode de vue sur Smartphone */}
+              {/* Mode de vue Smartphone */}
               <div className="mobile-view-toggle">
                 <button
                   type="button"
@@ -426,7 +499,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
             </div>
           </div>
 
-          {/* Navigation par Onglets Jours (Visible sur Mobile si mode 'tab') */}
+          {/* Navigation Onglets (Mobile) */}
           {mobileMode === "tab" && (
             <div className="mobile-day-tabs">
               {DAYS.map((dayName, index) => {
@@ -446,7 +519,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
             </div>
           )}
 
-          {/* Vue Grille Bureau (Tableau 4 créneaux avec Fond Uni) */}
+          {/* Vue Grille Bureau */}
           <div className="desktop-planner-table">
             <div className="planner-table-header">
               <div>Jour</div>
@@ -525,7 +598,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
             })}
           </div>
 
-          {/* Vue Planning Mobile (Défilant par jour avec 4 créneaux) */}
+          {/* Vue Planning Mobile avec menus déroulants groupés par <optgroup> */}
           <div className="mobile-planner-cards">
             {DAYS.map((dayName, dayIndex) => {
               const currentDate = addDays(startDate, dayIndex);
@@ -561,12 +634,19 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                               value={primaryPlanned ? primaryPlanned.recipe.id : ""}
                               onChange={(e) => handleSelectMeal(dayIndex, m.key, e.target.value, primaryPlanned?.id)}
                             >
-                              <option value="">-- Ajouter un repas --</option>
-                              {allRecipes.map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.title}
-                                </option>
-                              ))}
+                              <option value="">-- Choisir une recette --</option>
+                              {Object.entries(recipesByCategory).map(([catName, recList]) => {
+                                const emoji = CATEGORY_EMOJIS[catName] || "🍲";
+                                return (
+                                  <optgroup key={catName} label={`${emoji} ${catName}`}>
+                                    {recList.map(r => (
+                                      <option key={r.id} value={r.id}>
+                                        {r.title}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                );
+                              })}
                             </select>
                             
                             {primaryPlanned && (
