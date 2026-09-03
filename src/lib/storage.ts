@@ -149,12 +149,15 @@ export function getLocalPlannings(): LocalPlanning[] {
 export function saveLocalPlanning(item: { id?: string; recipe: any; date: Date | string; mealTime: string }): LocalPlanning {
   const current = getLocalPlannings();
   const id = item.id || "plan_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
-  const dateStr = typeof item.date === "string" ? item.date : item.date.toISOString();
+
+  let dateObj = typeof item.date === "string" ? new Date(item.date) : new Date(item.date);
+  // Normaliser la date locale à 12:00:00
+  dateObj.setHours(12, 0, 0, 0);
 
   const newPlanning: LocalPlanning = {
     id,
     recipe: item.recipe,
-    date: dateStr,
+    date: dateObj.toISOString(),
     mealTime: item.mealTime,
   };
 
@@ -174,14 +177,12 @@ export function removeLocalPlanning(id: string) {
   } catch (e) {}
 }
 
-function isSameDaySimple(d1: Date | string, d2: Date | string): boolean {
-  const date1 = new Date(d1);
-  const date2 = new Date(d2);
-  return (
-    date1.getUTCFullYear() === date2.getUTCFullYear() &&
-    date1.getUTCMonth() === date2.getUTCMonth() &&
-    date1.getUTCDate() === date2.getUTCDate()
-  );
+function getFormattedDateKey(d: Date | string): string {
+  const dateObj = typeof d === "string" ? new Date(d) : d;
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function mergePlannings(serverPlannings: any[] = []): any[] {
@@ -195,7 +196,7 @@ export function mergePlannings(serverPlannings: any[] = []): any[] {
   local.forEach(loc => {
     if (!map.has(loc.id)) {
       const isDuplicate = Array.from(map.values()).some(serv => {
-        const sameDate = isSameDaySimple(serv.date, loc.date);
+        const sameDate = getFormattedDateKey(serv.date) === getFormattedDateKey(loc.date);
         const sameMeal = serv.mealTime === loc.mealTime;
         const sameRecipe = ((serv as any).recipeId || serv.recipe?.id) === ((loc as any).recipeId || loc.recipe?.id);
         return sameDate && sameMeal && sameRecipe;

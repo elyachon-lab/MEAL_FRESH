@@ -53,16 +53,16 @@ const CATEGORY_EMOJIS: Record<string, string> = {
   "Épices & Condiments": "🌿",
 };
 
-function isSameDay(d1: Date | string, d2: Date): boolean {
-  const date1 = new Date(d1);
-  return (
-    (date1.getUTCFullYear() === d2.getFullYear() &&
-     date1.getUTCMonth() === d2.getMonth() &&
-     date1.getUTCDate() === d2.getDate()) ||
-    (date1.getFullYear() === d2.getFullYear() &&
-     date1.getMonth() === d2.getMonth() &&
-     date1.getDate() === d2.getDate())
-  );
+function getFormattedDateKey(d: Date | string): string {
+  const dateObj = typeof d === "string" ? new Date(d) : d;
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isSameDay(d1: Date | string, d2: Date | string): boolean {
+  return getFormattedDateKey(d1) === getFormattedDateKey(d2);
 }
 
 function getRecipePrimaryCategory(recipe: Recipe): string {
@@ -194,6 +194,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
       const [dayStr, mealTime] = destination.droppableId.split("-");
       const dayOffset = parseInt(dayStr, 10);
       const targetDate = addDays(startDate, dayOffset);
+      targetDate.setHours(12, 0, 0, 0); // Normaliser à 12:00:00 pour éviter tout décalage d'un jour
 
       const recipeToAssign = isFromBank
         ? allRecipes.find(r => r.id === recipeId)
@@ -241,6 +242,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   const handleSelectMeal = (dayIndex: number, mealTime: MealKey, recipeId: string, currentPlanningId?: string) => {
     const targetDate = addDays(startDate, dayIndex);
+    targetDate.setHours(12, 0, 0, 0);
     
     if (!recipeId) {
       if (currentPlanningId) {

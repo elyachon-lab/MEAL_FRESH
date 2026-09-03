@@ -42,8 +42,8 @@ export async function assignMeal(
   try {
     await ensureDatabaseSchema();
     const rawDate = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
-    // Normaliser la date à 12:00:00 pour éviter les décalages de jour en fuseau horaire UTC/Local
-    const date = new Date(Date.UTC(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate(), 12, 0, 0));
+    // Normaliser à 12:00:00 pour annuler tout décalage de fuseau horaire UTC/Local
+    const date = new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate(), 12, 0, 0);
 
     if (existingPlanningId) {
       await prisma.planning.update({
