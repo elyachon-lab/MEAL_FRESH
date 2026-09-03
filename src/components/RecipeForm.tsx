@@ -74,12 +74,17 @@ export default function RecipeForm({ categories, onSuccess }: { categories: Cate
           finalIngredients.push({ name: ingName.trim(), categoryId: catId, quantity: ingQty });
         }
 
-        await createRecipeWithIngredients({
+        const res = await createRecipeWithIngredients({
           title,
           urlSource,
           instructions,
           ingredients: finalIngredients,
         });
+
+        if (res && res.success === false) {
+          setMessage({ text: res.error || "Erreur lors de l'enregistrement.", type: "error" });
+          return;
+        }
 
         setTitle("");
         setUrlSource("");

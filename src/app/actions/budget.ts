@@ -1,6 +1,6 @@
 "use server";
 
-import prisma from "@/lib/prisma";
+import prisma, { ensureDatabaseSchema } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
 function toPlainObject<T>(data: T): T {
@@ -8,41 +8,58 @@ function toPlainObject<T>(data: T): T {
 }
 
 export async function getMonthlyBudget(monthStr: string) {
-  let budget = await prisma.monthlyBudget.findUnique({
-    where: { month: monthStr },
-    include: {
-      expenses: {
-        orderBy: { date: "desc" },
-      },
-    },
-  });
-
-  if (!budget) {
-    budget = await prisma.monthlyBudget.create({
-      data: {
-        month: monthStr,
-        amount: 400, // Budget par défaut initial de 400€
-      },
+  try {
+    await ensureDatabaseSchema();
+    let budget = await prisma.monthlyBudget.findUnique({
+      where: { month: monthStr },
       include: {
-        expenses: true,
+        expenses: {
+          orderBy: { date: "desc" },
+        },
       },
     });
-  }
 
-  return toPlainObject(budget);
+    if (!budget) {
+      budget = await prisma.monthlyBudget.create({
+        data: {
+          month: monthStr,
+          amount: 400, // Budget par défaut initial de 400€
+        },
+        include: {
+          expenses: true,
+        },
+      });
+    }
+
+    return toPlainObject(budget);
+  } catch (err: any) {
+    console.error("Error in getMonthlyBudget:", err);
+    return {
+      id: "default",
+      month: monthStr,
+      amount: 400,
+      expenses: []
+    };
+  }
 }
 
 export async function updateBudgetAmount(monthStr: string, newAmount: number) {
-  if (isNaN(newAmount) || newAmount < 0) return { success: false };
+  try {
+    await ensureDatabaseSchema();
+    if (isNaN(newAmount) || newAmount < 0) return { success: false, error: "Montant invalide." };
 
-  await prisma.monthlyBudget.upsert({
-    where: { month: monthStr },
-    update: { amount: newAmount },
-    create: { month: monthStr, amount: newAmount },
-  });
+    await prisma.monthlyBudget.upsert({
+      where: { month: monthStr },
+      update: { amount: newAmount },
+      create: { month: monthStr, amount: newAmount },
+    });
 
-  revalidatePath("/budget");
-  return { success: true };
+    revalidatePath("/budget");
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in updateBudgetAmount:", err);
+    return { success: false, error: err?.message || "Erreur de mise à jour du budget." };
+  }
 }
 
 export async function addExpense(data: {
@@ -52,29 +69,43 @@ export async function addExpense(data: {
   category: string;
   description?: string;
 }) {
-  if (!data.amount || data.amount <= 0 || !data.category) return { success: false };
+  try {
+    await ensureDatabaseSchema();
+    if (!data.amount || data.amount <= 0 || !data.category) {
+      return { success: false, error: "Montant et catégorie requis." };
+    }
 
-  const budget = await getMonthlyBudget(data.monthStr);
+    const budget = await getMonthlyBudget(data.monthStr);
 
-  await prisma.expense.create({
-    data: {
-      monthlyBudgetId: budget.id,
-      date: new Date(data.dateStr),
-      amount: data.amount,
-      category: data.category,
-      description: data.description || "",
-    },
-  });
+    await prisma.expense.create({
+      data: {
+        monthlyBudgetId: budget.id,
+        date: new Date(data.dateStr),
+        amount: data.amount,
+        category: data.category,
+        description: data.description || "",
+      },
+    });
 
-  revalidatePath("/budget");
-  return { success: true };
+    revalidatePath("/budget");
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in addExpense:", err);
+    return { success: false, error: err?.message || "Erreur lors de l'ajout de la dépense." };
+  }
 }
 
 export async function deleteExpense(expenseId: string) {
-  await prisma.expense.delete({
-    where: { id: expenseId },
-  });
+  try {
+    await ensureDatabaseSchema();
+    await prisma.expense.delete({
+      where: { id: expenseId },
+    });
 
-  revalidatePath("/budget");
-  return { success: true };
+    revalidatePath("/budget");
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in deleteExpense:", err);
+    return { success: false, error: err?.message || "Erreur lors de la suppression." };
+  }
 }

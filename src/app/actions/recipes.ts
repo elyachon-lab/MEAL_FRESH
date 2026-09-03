@@ -1,6 +1,6 @@
 "use server";
 
-import prisma from "@/lib/prisma";
+import prisma, { ensureDatabaseSchema } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { findOrCreateIngredient, getCategories } from "./ingredients";
 
@@ -9,42 +9,54 @@ function toPlainObject<T>(data: T): T {
 }
 
 export async function getRecipes() {
-  const recipes = await prisma.recipe.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      ingredients: {
-        include: {
-          ingredient: {
-            include: { category: true }
+  try {
+    await ensureDatabaseSchema();
+    const recipes = await prisma.recipe.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        ingredients: {
+          include: {
+            ingredient: {
+              include: { category: true }
+            }
           }
         }
       }
-    }
-  });
+    });
 
-  return toPlainObject(recipes);
+    return toPlainObject(recipes);
+  } catch (err: any) {
+    console.error("Error in getRecipes:", err);
+    return [];
+  }
 }
 
 export async function createRecipe(data: FormData) {
-  const title = (data.get("title") as string)?.trim();
-  const urlSource = (data.get("urlSource") as string)?.trim();
-  const instructions = (data.get("instructions") as string)?.trim();
+  try {
+    await ensureDatabaseSchema();
+    const title = (data.get("title") as string)?.trim();
+    const urlSource = (data.get("urlSource") as string)?.trim();
+    const instructions = (data.get("instructions") as string)?.trim();
 
-  if (!title) throw new Error("Le titre de la recette est requis.");
+    if (!title) return { success: false, error: "Le titre de la recette est requis." };
 
-  const created = await prisma.recipe.create({
-    data: {
-      title,
-      urlSource: urlSource || null,
-      instructions: instructions || null,
-    },
-  });
+    const created = await prisma.recipe.create({
+      data: {
+        title,
+        urlSource: urlSource || null,
+        instructions: instructions || null,
+      },
+    });
 
-  revalidatePath("/");
-  revalidatePath("/recipes");
-  revalidatePath("/planning");
+    revalidatePath("/");
+    revalidatePath("/recipes");
+    revalidatePath("/planning");
 
-  return { success: true, id: created.id };
+    return { success: true, id: created.id };
+  } catch (err: any) {
+    console.error("Error in createRecipe:", err);
+    return { success: false, error: err?.message || "Erreur lors de la création de la recette." };
+  }
 }
 
 export async function createRecipeWithIngredients(data: {
@@ -53,53 +65,65 @@ export async function createRecipeWithIngredients(data: {
   instructions?: string;
   ingredients?: { name: string; categoryId: string; quantity: string }[];
 }) {
-  const title = data.title?.trim();
-  if (!title) throw new Error("Le titre de la recette est obligatoire.");
+  try {
+    await ensureDatabaseSchema();
+    const title = data.title?.trim();
+    if (!title) return { success: false, error: "Le titre de la recette est obligatoire." };
 
-  const categories = await getCategories();
-  const defaultCategoryId = categories[0]?.id;
-  const rawIngredients = data.ingredients || [];
+    const categories = await getCategories();
+    const defaultCategoryId = categories[0]?.id;
+    const rawIngredients = data.ingredients || [];
 
-  const resolvedIngredients = await Promise.all(
-    rawIngredients.map(async (ing) => {
-      const ingName = ing.name?.trim();
-      if (!ingName) return null;
-      const catId = ing.categoryId || defaultCategoryId;
-      const id = await findOrCreateIngredient(ingName, catId);
-      return { id, quantity: ing.quantity?.trim() || null };
-    })
-  );
+    const resolvedIngredients = await Promise.all(
+      rawIngredients.map(async (ing) => {
+        const ingName = ing.name?.trim();
+        if (!ingName) return null;
+        const catId = ing.categoryId || defaultCategoryId;
+        const id = await findOrCreateIngredient(ingName, catId);
+        return { id, quantity: ing.quantity?.trim() || null };
+      })
+    );
 
-  const validIngredients = resolvedIngredients.filter((item): item is { id: string; quantity: string | null } => item !== null);
+    const validIngredients = resolvedIngredients.filter((item): item is { id: string; quantity: string | null } => item !== null);
 
-  const createdRecipe = await prisma.recipe.create({
-    data: {
-      title,
-      urlSource: data.urlSource?.trim() || null,
-      instructions: data.instructions?.trim() || null,
-      ingredients: {
-        create: validIngredients.map(ing => ({
-          ingredientId: ing.id,
-          quantity: ing.quantity
-        }))
+    const createdRecipe = await prisma.recipe.create({
+      data: {
+        title,
+        urlSource: data.urlSource?.trim() || null,
+        instructions: data.instructions?.trim() || null,
+        ingredients: {
+          create: validIngredients.map(ing => ({
+            ingredientId: ing.id,
+            quantity: ing.quantity
+          }))
+        }
       }
-    }
-  });
+    });
 
-  revalidatePath("/");
-  revalidatePath("/recipes");
-  revalidatePath("/planning");
-  revalidatePath("/ingredients");
+    revalidatePath("/");
+    revalidatePath("/recipes");
+    revalidatePath("/planning");
+    revalidatePath("/ingredients");
 
-  return { success: true, id: createdRecipe.id };
+    return { success: true, id: createdRecipe.id };
+  } catch (err: any) {
+    console.error("Error in createRecipeWithIngredients:", err);
+    return { success: false, error: err?.message || "Erreur lors de la sauvegarde de la recette." };
+  }
 }
 
 export async function deleteRecipe(id: string) {
-  await prisma.recipe.delete({ where: { id } });
-  revalidatePath("/");
-  revalidatePath("/recipes");
-  revalidatePath("/planning");
-  return { success: true };
+  try {
+    await ensureDatabaseSchema();
+    await prisma.recipe.delete({ where: { id } });
+    revalidatePath("/");
+    revalidatePath("/recipes");
+    revalidatePath("/planning");
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in deleteRecipe:", err);
+    return { success: false, error: err?.message || "Erreur lors de la suppression." };
+  }
 }
 
 export async function updateRecipeWithIngredients(data: {
@@ -109,46 +133,52 @@ export async function updateRecipeWithIngredients(data: {
   instructions?: string;
   ingredients?: { name: string; categoryId: string; quantity: string }[];
 }) {
-  const title = data.title?.trim();
-  if (!title) throw new Error("Le titre est requis.");
+  try {
+    await ensureDatabaseSchema();
+    const title = data.title?.trim();
+    if (!title) return { success: false, error: "Le titre est requis." };
 
-  const categories = await getCategories();
-  const defaultCategoryId = categories[0]?.id;
-  const rawIngredients = data.ingredients || [];
+    const categories = await getCategories();
+    const defaultCategoryId = categories[0]?.id;
+    const rawIngredients = data.ingredients || [];
 
-  const resolvedIngredients = await Promise.all(
-    rawIngredients.map(async (ing) => {
-      const ingName = ing.name?.trim();
-      if (!ingName) return null;
-      const catId = ing.categoryId || defaultCategoryId;
-      const id = await findOrCreateIngredient(ingName, catId);
-      return { id, quantity: ing.quantity?.trim() || null };
-    })
-  );
+    const resolvedIngredients = await Promise.all(
+      rawIngredients.map(async (ing) => {
+        const ingName = ing.name?.trim();
+        if (!ingName) return null;
+        const catId = ing.categoryId || defaultCategoryId;
+        const id = await findOrCreateIngredient(ingName, catId);
+        return { id, quantity: ing.quantity?.trim() || null };
+      })
+    );
 
-  const validIngredients = resolvedIngredients.filter((item): item is { id: string; quantity: string | null } => item !== null);
+    const validIngredients = resolvedIngredients.filter((item): item is { id: string; quantity: string | null } => item !== null);
 
-  await prisma.recipeIngredient.deleteMany({ where: { recipeId: data.id } });
+    await prisma.recipeIngredient.deleteMany({ where: { recipeId: data.id } });
 
-  await prisma.recipe.update({
-    where: { id: data.id },
-    data: {
-      title,
-      urlSource: data.urlSource?.trim() || null,
-      instructions: data.instructions?.trim() || null,
-      ingredients: {
-        create: validIngredients.map(ing => ({
-          ingredientId: ing.id,
-          quantity: ing.quantity
-        }))
+    await prisma.recipe.update({
+      where: { id: data.id },
+      data: {
+        title,
+        urlSource: data.urlSource?.trim() || null,
+        instructions: data.instructions?.trim() || null,
+        ingredients: {
+          create: validIngredients.map(ing => ({
+            ingredientId: ing.id,
+            quantity: ing.quantity
+          }))
+        }
       }
-    }
-  });
+    });
 
-  revalidatePath("/");
-  revalidatePath("/recipes");
-  revalidatePath("/planning");
-  revalidatePath("/ingredients");
+    revalidatePath("/");
+    revalidatePath("/recipes");
+    revalidatePath("/planning");
+    revalidatePath("/ingredients");
 
-  return { success: true };
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in updateRecipeWithIngredients:", err);
+    return { success: false, error: err?.message || "Erreur lors de la mise à jour." };
+  }
 }

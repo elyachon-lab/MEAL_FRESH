@@ -1,6 +1,6 @@
 "use server";
 
-import prisma from "@/lib/prisma";
+import prisma, { ensureDatabaseSchema } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
 const DEFAULT_CATEGORIES = [
@@ -13,39 +13,55 @@ const DEFAULT_CATEGORIES = [
   "Épices & Condiments"
 ];
 
+function toPlainObject<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
+
 export async function getCategories() {
-  let categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
+  try {
+    await ensureDatabaseSchema();
+    let categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
 
-  // Si aucune catégorie n'existe encore, on peuple automatiquement les catégories par défaut
-  if (categories.length === 0) {
-    for (const name of DEFAULT_CATEGORIES) {
-      await prisma.category.upsert({
-        where: { name },
-        update: {},
-        create: { name },
-      });
+    // Si aucune catégorie n'existe encore, on peuple automatiquement les catégories par défaut
+    if (categories.length === 0) {
+      for (const name of DEFAULT_CATEGORIES) {
+        await prisma.category.upsert({
+          where: { name },
+          update: {},
+          create: { name },
+        });
+      }
+      categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
     }
-    categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
-  }
 
-  return categories;
+    return toPlainObject(categories);
+  } catch (err) {
+    console.error("Error in getCategories:", err);
+    return [];
+  }
 }
 
 export async function getIngredients() {
-  return await prisma.ingredient.findMany({
-    include: { category: true },
-    orderBy: { name: "asc" }
-  });
+  try {
+    await ensureDatabaseSchema();
+    const ingredients = await prisma.ingredient.findMany({
+      include: { category: true },
+      orderBy: { name: "asc" }
+    });
+    return toPlainObject(ingredients);
+  } catch (err) {
+    console.error("Error in getIngredients:", err);
+    return [];
+  }
 }
 
 /**
  * Trouve ou crée un ingrédient par son nom dans la catégorie donnée.
- * Si l'ingrédient existe déjà (même nom, même catégorie), le réutilise.
  */
 export async function findOrCreateIngredient(name: string, categoryId: string): Promise<string> {
+  await ensureDatabaseSchema();
   const trimmed = name.trim();
   
-  // Si la catégorie n'est pas fournie, récupérer la 1ère disponible
   let catId = categoryId;
   if (!catId) {
     const cats = await getCategories();
@@ -69,10 +85,16 @@ export async function findOrCreateIngredient(name: string, categoryId: string): 
 }
 
 export async function createIngredient(name: string, categoryId: string) {
-  const ingredient = await prisma.ingredient.create({
-    data: { name, categoryId }
-  });
-  revalidatePath("/ingredients");
-  revalidatePath("/recipes");
-  return ingredient;
+  try {
+    await ensureDatabaseSchema();
+    const ingredient = await prisma.ingredient.create({
+      data: { name, categoryId }
+    });
+    revalidatePath("/ingredients");
+    revalidatePath("/recipes");
+    return { success: true, ingredient: toPlainObject(ingredient) };
+  } catch (err: any) {
+    console.error("Error in createIngredient:", err);
+    return { success: false, error: err?.message || "Erreur lors de la création de l'ingrédient." };
+  }
 }
