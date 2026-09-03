@@ -5,13 +5,14 @@ import Link from "next/link";
 import { getLocalRecipes } from "../lib/storage";
 
 const categoryEmojis: Record<string, string> = {
-  "Fruits":              "🍎",
-  "Légumes":             "🥦",
   "Protéines":           "🥩",
-  "Glucides":            "🌾",
+  "Glucides":            "🍚",
+  "Légumes":             "🥦",
+  "Fruits":              "🍎",
   "Produits Laitiers":   "🧀",
+  "Sucré":               "🍬",
   "Matières Grasses":    "🫒",
-  "Épices & Condiments": "🌶️",
+  "Épices & Condiments": "🌿",
 };
 
 function getCategoryEmoji(name: string): string {
@@ -78,29 +79,29 @@ export default function CategoriesOverview({ initialCategories }: { initialCateg
   return (
     <div>
       <div className="page-header">
-        <div className="badge badge-accent mb-1">🥑 Répertoire Culinaire</div>
-        <h1>Parcourir par catégorie</h1>
+        <div className="badge badge-accent mb-1">🥑 Répertoire Culinaire & Catégories</div>
+        <h1>Ingrédients par Catégories</h1>
         <p style={{ color: "var(--text-secondary)", marginTop: ".25rem" }}>
-          Consultez tous vos ingrédients classés par catégorie et découvrez les recettes associées.
+          Explorez vos ingrédients classés par catégorie et découvrez les recettes associées façon Jow.
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "1.25rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "1.25rem" }}>
         {categories.map((category: any) => {
           const ingCount = category.totalCount ?? (category._count?.ingredients ?? 0);
           return (
             <Link key={category.id} href={`/ingredients/${category.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-              <article className="card" style={{ height: "100%", overflow: "hidden" }}>
-                <div style={{ background: "var(--primary-light)", padding: "2rem 1rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: "3rem", lineHeight: 1 }}>{getCategoryEmoji(category.name)}</span>
+              <article className="card" style={{ height: "100%", overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s" }}>
+                <div style={{ background: "var(--primary-light)", padding: "2.25rem 1rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: "3.25rem", lineHeight: 1 }}>{getCategoryEmoji(category.name)}</span>
                 </div>
-                <div className="card-body">
-                  <h3 style={{ margin: 0, fontSize: "1.05rem", color: "var(--text-primary)" }}>{category.name}</h3>
-                  <p style={{ margin: ".25rem 0 .5rem", fontSize: ".8125rem", color: "var(--text-secondary)" }}>
-                    {ingCount} ingrédient{ingCount !== 1 ? "s" : ""} enregistré{ingCount !== 1 ? "s" : ""}
+                <div className="card-body" style={{ padding: "1.25rem" }}>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", color: "var(--text-primary)" }}>{category.name}</h3>
+                  <p style={{ margin: ".35rem 0 .75rem", fontSize: ".85rem", color: "var(--text-secondary)" }}>
+                    {ingCount} ingrédient{ingCount !== 1 ? "s" : ""} référencé{ingCount !== 1 ? "s" : ""}
                   </p>
-                  <span style={{ fontSize: ".85rem", color: "var(--primary)", fontWeight: 700 }}>
-                    Voir les détails &rarr;
+                  <span style={{ fontSize: ".85rem", color: "var(--primary)", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    Parcourir les recettes &rarr;
                   </span>
                 </div>
               </article>
