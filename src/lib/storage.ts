@@ -29,8 +29,19 @@ export type LocalPlanning = {
   mealTime: string;
 };
 
+export type LocalExpense = {
+  id: string;
+  date: string;
+  amount: number;
+  category: string;
+  description?: string | null;
+  monthStr: string;
+};
+
 const RECIPES_KEY = "mealfresh_local_recipes_v2";
 const PLANNINGS_KEY = "mealfresh_local_plannings_v2";
+const EXPENSES_KEY = "mealfresh_local_expenses_v2";
+const BUDGET_AMOUNT_KEY = "mealfresh_local_budget_amounts_v2";
 
 function notifyRecipeUpdate() {
   if (typeof window !== "undefined") {
@@ -174,4 +185,89 @@ export function mergePlannings(serverPlannings: any[] = []): any[] {
   });
 
   return Array.from(serverMap.values());
+}
+
+/* ── PERSISTENCE DU BUDGET ET DES DÉPENSES ── */
+
+export function getLocalExpenses(): LocalExpense[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const data = localStorage.getItem(EXPENSES_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveLocalExpense(item: {
+  id?: string;
+  date: Date | string;
+  amount: number;
+  category: string;
+  description?: string | null;
+  monthStr: string;
+}): LocalExpense {
+  const current = getLocalExpenses();
+  const id = item.id || "exp_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+  const dateStr = typeof item.date === "string" ? item.date : item.date.toISOString();
+
+  const newExpense: LocalExpense = {
+    id,
+    date: dateStr,
+    amount: Number(item.amount),
+    category: item.category,
+    description: item.description || null,
+    monthStr: item.monthStr,
+  };
+
+  const updated = [newExpense, ...current.filter(e => e.id !== id)];
+  try {
+    localStorage.setItem(EXPENSES_KEY, JSON.stringify(updated));
+  } catch (e) {}
+
+  return newExpense;
+}
+
+export function removeLocalExpense(id: string) {
+  const current = getLocalExpenses();
+  const updated = current.filter(e => e.id !== id);
+  try {
+    localStorage.setItem(EXPENSES_KEY, JSON.stringify(updated));
+  } catch (e) {}
+}
+
+export function mergeExpenses(serverExpenses: any[] = [], monthStr: string): any[] {
+  const local = getLocalExpenses().filter(e => e.monthStr === monthStr);
+  const serverMap = new Map(serverExpenses.map(e => [e.id, e]));
+
+  local.forEach(e => {
+    if (!serverMap.has(e.id)) {
+      serverMap.set(e.id, e);
+    }
+  });
+
+  return Array.from(serverMap.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+}
+
+export function getLocalBudgetAmount(monthStr: string, fallbackAmount: number = 400): number {
+  if (typeof window === "undefined") return fallbackAmount;
+  try {
+    const data = localStorage.getItem(BUDGET_AMOUNT_KEY);
+    const map = data ? JSON.parse(data) : {};
+    return map[monthStr] !== undefined ? Number(map[monthStr]) : fallbackAmount;
+  } catch (e) {
+    return fallbackAmount;
+  }
+}
+
+export function saveLocalBudgetAmount(monthStr: string, amount: number) {
+  if (typeof window === "undefined") return;
+  try {
+    const data = localStorage.getItem(BUDGET_AMOUNT_KEY);
+    const map = data ? JSON.parse(data) : {};
+    map[monthStr] = Number(amount);
+    localStorage.setItem(BUDGET_AMOUNT_KEY, JSON.stringify(map));
+  } catch (e) {}
 }
