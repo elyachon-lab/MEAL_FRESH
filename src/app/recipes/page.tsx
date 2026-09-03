@@ -1,7 +1,7 @@
 import { getRecipes } from "../actions/recipes";
 import { getCategories } from "../actions/ingredients";
 import RecipeForm from "@/components/RecipeForm";
-import RecipeCard from "@/components/RecipeCard";
+import RecipeBankList from "@/components/RecipeBankList";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,26 +19,9 @@ export default async function RecipesPage() {
       </div>
 
       <div className="recipes-layout">
-        {/* Liste des recettes en grille responsive */}
+        {/* Liste des recettes en grille responsive avec persistance fusionnée */}
         <div className="recipes-main-section">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-            <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: "var(--text-secondary)", margin: 0 }}>
-              {recipes.length} recette{recipes.length !== 1 ? "s" : ""} enregistrée{recipes.length !== 1 ? "s" : ""}
-            </h2>
-          </div>
-
-          {recipes.length === 0 ? (
-            <div className="card" style={{ textAlign: "center", padding: "3rem" }}>
-              <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📭</div>
-              <p style={{ color: "var(--text-secondary)" }}>Aucune recette pour le moment. Commencez par en ajouter une !</p>
-            </div>
-          ) : (
-            <div className="recipes-cards-grid">
-              {recipes.map((recipe: any) => (
-                <RecipeCard key={recipe.id} recipe={recipe} categories={categories} />
-              ))}
-            </div>
-          )}
+          <RecipeBankList initialRecipes={recipes} categories={categories} />
         </div>
 
         {/* Formulaire d'ajout en sidebar / fixe */}

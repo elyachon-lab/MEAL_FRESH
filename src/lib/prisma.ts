@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+import { PrismaLibSql } from '@prisma/adapter-libsql'
+import { createClient } from '@libsql/client'
 import fs from 'fs'
 import path from 'path'
 
@@ -7,8 +9,9 @@ const getDatabaseUrl = () => {
   if (process.env.DATABASE_URL) {
     return process.env.DATABASE_URL
   }
-  // Sur Vercel (environnement serverless avec système de fichier en lecture seule),
-  // utiliser /tmp/meal_fresh.db pour avoir les droits d'écriture complets.
+  if (process.env.TURSO_DATABASE_URL) {
+    return process.env.TURSO_DATABASE_URL
+  }
   if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
     return 'file:/tmp/meal_fresh.db'
   }
@@ -18,6 +21,15 @@ const getDatabaseUrl = () => {
 const prismaClientSingleton = () => {
   const dbUrl = getDatabaseUrl()
   
+  if (dbUrl.startsWith('libsql://') || dbUrl.startsWith('https://')) {
+    const libsql = createClient({
+      url: dbUrl,
+      authToken: process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN
+    })
+    const adapter = new PrismaLibSql(libsql as any)
+    return new PrismaClient({ adapter })
+  }
+
   if (dbUrl.startsWith('file:')) {
     const filePath = dbUrl.replace('file:', '')
     const dir = path.dirname(filePath)
@@ -25,7 +37,7 @@ const prismaClientSingleton = () => {
       try {
         fs.mkdirSync(dir, { recursive: true })
       } catch (e) {
-        // Ignorer si le répertoire existe déjà
+        // Ignorer
       }
     }
   }
@@ -45,7 +57,7 @@ export default prisma
 if (process.env.NODE_ENV !== 'production') globalThis.prismaGlobal = prisma
 
 /**
- * Auto-initialisation des tables SQLite en cas de nouveau conteneur Vercel Serverless.
+ * Auto-initialisation des tables SQLite en cas de conteneur Vercel Serverless.
  */
 let isSchemaInitialized = false
 

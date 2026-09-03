@@ -7,6 +7,7 @@ import { format, startOfWeek, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
 import { assignMeal, removeMeal } from "../app/actions/planning";
 import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
+import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe } from "../lib/storage";
 import RecipeForm from "./RecipeForm";
 
 type Category = { id: string; name: string };
@@ -48,6 +49,9 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
+  // Recettes combinées (serveur + persistance locale navigateur)
+  const [allRecipes, setAllRecipes] = useState<Recipe[]>(recipes);
+
   // État formulaire édition rapide recette
   const [editTitle, setEditTitle] = useState("");
   const [editUrl, setEditUrl] = useState("");
@@ -59,7 +63,8 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   useEffect(() => {
     setIsReady(true);
-  }, []);
+    setAllRecipes(mergeRecipes(recipes));
+  }, [recipes]);
 
   const startEditRecipe = (recipe: Recipe) => {
     setEditingRecipe(recipe);
@@ -78,6 +83,14 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const handleSaveEditRecipe = () => {
     if (!editingRecipe || !editTitle.trim()) return;
 
+    saveLocalRecipe({
+      id: editingRecipe.id,
+      title: editTitle.trim(),
+      urlSource: editUrl.trim(),
+      instructions: editInstructions.trim(),
+      ingredients: editIngredients,
+    });
+
     startTransition(async () => {
       await updateRecipeWithIngredients({
         id: editingRecipe.id,
@@ -87,14 +100,17 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         ingredients: editIngredients,
       });
       setEditingRecipe(null);
+      setAllRecipes(mergeRecipes(recipes));
       router.refresh();
     });
   };
 
   const handleDeleteBankRecipe = (id: string) => {
+    deleteLocalRecipe(id);
     startTransition(async () => {
       await deleteRecipe(id);
       if (editingRecipe?.id === id) setEditingRecipe(null);
+      setAllRecipes(mergeRecipes(recipes));
       router.refresh();
     });
   };
@@ -165,7 +181,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           <div className="recipe-bank-header">
             <div>
               <h2>📖 Banque de Recettes</h2>
-              <span className="badge">{recipes.length} enregistrée{recipes.length > 1 ? "s" : ""}</span>
+              <span className="badge">{allRecipes.length} enregistrée{allRecipes.length > 1 ? "s" : ""}</span>
             </div>
             
             <button
@@ -182,7 +198,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           {showFormModal && (
             <div style={{ background: "var(--bg)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", border: "1.5px solid var(--primary)" }}>
               <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>➕ Nouvelle Recette dans la Banque</h3>
-              <RecipeForm categories={categories} onSuccess={() => { setShowFormModal(false); router.refresh(); }} />
+              <RecipeForm categories={categories} onSuccess={() => { setShowFormModal(false); setAllRecipes(mergeRecipes(recipes)); router.refresh(); }} />
             </div>
           )}
 
@@ -222,7 +238,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                 {...provided.droppableProps}
                 className={`recipe-bank-list ${snapshot.isDraggingOver ? 'dragging-over' : ''}`}
               >
-                {recipes.length === 0 ? (
+                {allRecipes.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
                     <p className="text-muted text-sm" style={{ marginBottom: "0.75rem" }}>
                       Aucune recette enregistrée.
@@ -236,7 +252,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                     </button>
                   </div>
                 ) : (
-                  recipes.map((recipe, index) => (
+                  allRecipes.map((recipe, index) => (
                     <Draggable key={`recipe_${recipe.id}`} draggableId={`recipe_${recipe.id}`} index={index}>
                       {(provided, snapshot) => (
                         <div
@@ -436,7 +452,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                               onChange={(e) => handleSelectMeal(dayIndex, m.key, e.target.value, planned?.id)}
                             >
                               <option value="">-- Ajouter un repas --</option>
-                              {recipes.map((r) => (
+                              {allRecipes.map((r) => (
                                 <option key={r.id} value={r.id}>
                                   {r.title}
                                 </option>
