@@ -20,7 +20,15 @@ export type LocalRecipe = {
   createdAt: string;
 };
 
+export type LocalPlanning = {
+  id: string;
+  recipe: any;
+  date: string;
+  mealTime: string;
+};
+
 const RECIPES_KEY = "mealfresh_local_recipes_v2";
+const PLANNINGS_KEY = "mealfresh_local_plannings_v2";
 
 export function getLocalRecipes(): LocalRecipe[] {
   if (typeof window === "undefined") return [];
@@ -83,10 +91,60 @@ export function mergeRecipes(serverRecipes: any[] = []): any[] {
   const local = getLocalRecipes();
   const serverMap = new Map(serverRecipes.map(r => [r.id, r]));
   
-  // Ajouter les recettes locales qui ne sont pas sur le serveur
   local.forEach(r => {
     if (!serverMap.has(r.id)) {
       serverMap.set(r.id, r);
+    }
+  });
+
+  return Array.from(serverMap.values());
+}
+
+export function getLocalPlannings(): LocalPlanning[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const data = localStorage.getItem(PLANNINGS_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveLocalPlanning(item: { id?: string; recipe: any; date: Date | string; mealTime: string }): LocalPlanning {
+  const current = getLocalPlannings();
+  const id = item.id || "plan_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+  const dateStr = typeof item.date === "string" ? item.date : item.date.toISOString();
+
+  const newPlanning: LocalPlanning = {
+    id,
+    recipe: item.recipe,
+    date: dateStr,
+    mealTime: item.mealTime,
+  };
+
+  const updated = [...current.filter(p => p.id !== id), newPlanning];
+  try {
+    localStorage.setItem(PLANNINGS_KEY, JSON.stringify(updated));
+  } catch (e) {}
+
+  return newPlanning;
+}
+
+export function removeLocalPlanning(id: string) {
+  const current = getLocalPlannings();
+  const updated = current.filter(p => p.id !== id);
+  try {
+    localStorage.setItem(PLANNINGS_KEY, JSON.stringify(updated));
+  } catch (e) {}
+}
+
+export function mergePlannings(serverPlannings: any[] = []): any[] {
+  const local = getLocalPlannings();
+  const serverMap = new Map(serverPlannings.map(p => [p.id, p]));
+  
+  local.forEach(p => {
+    if (!serverMap.has(p.id)) {
+      serverMap.set(p.id, p);
     }
   });
 

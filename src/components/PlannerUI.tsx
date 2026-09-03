@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { format, startOfWeek, addDays } from "date-fns";
+import { format, startOfWeek, addDays, addWeeks } from "date-fns";
 import { fr } from "date-fns/locale";
 import { assignMeal, removeMeal } from "../app/actions/planning";
 import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
-import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe } from "../lib/storage";
+import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe, mergePlannings, saveLocalPlanning, removeLocalPlanning } from "../lib/storage";
 import RecipeForm from "./RecipeForm";
 
 type Category = { id: string; name: string };
@@ -62,10 +62,11 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
-  // Recettes combinées (serveur + persistance locale navigateur)
+  // État du décalage des semaines (0 = semaine actuelle, -1 = semaine précédente, +1 = suivante)
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  // Recettes et Plannings combinés (serveur + persistance locale navigateur)
   const [allRecipes, setAllRecipes] = useState<Recipe[]>(recipes);
-  
-  // État optimiste du planning pour affichage immédiat au lâcher de la carte
   const [localPlannings, setLocalPlannings] = useState<PlannedMeal[]>(plannings);
 
   // État formulaire édition rapide recette
@@ -75,12 +76,15 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const [editIngredients, setEditIngredients] = useState<IngredientLine[]>([]);
 
   const [isPending, startTransition] = useTransition();
-  const startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
+
+  // Date de début de la semaine sélectionnée
+  const baseStartDate = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const startDate = addWeeks(baseStartDate, weekOffset);
 
   useEffect(() => {
     setIsReady(true);
     setAllRecipes(mergeRecipes(recipes));
-    setLocalPlannings(plannings);
+    setLocalPlannings(mergePlannings(plannings));
   }, [recipes, plannings]);
 
   const startEditRecipe = (recipe: Recipe) => {
@@ -153,21 +157,17 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
       if (!recipeToAssign) return;
 
-      // 1. MISE À JOUR OPTIMISTE IMMÉDIATE DU PLANNING AU MOMENT DU LÂCHER
-      const tempId = "temp_" + Date.now();
-      const updatedLocal = localPlannings.filter(p => {
-        // Retirer tout ancien repas sur ce créneau et ce jour
-        return !(isSameDay(p.date, targetDate) && p.mealTime === mealTime);
-      });
-
-      updatedLocal.push({
+      const tempId = "plan_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+      const newMeal: PlannedMeal = {
         id: tempId,
         recipe: recipeToAssign,
         date: targetDate,
         mealTime,
-      });
+      };
 
-      setLocalPlannings(updatedLocal);
+      // 1. SAUVEGARDE LOCALE ET MISE À JOUR OPTIMISTE DU PLANNING (PERMANENT)
+      saveLocalPlanning(newMeal);
+      setLocalPlannings(prev => [...prev, newMeal]);
 
       // 2. SYNCHRONISATION SERVEUR EN ARRIÈRE-PLAN
       startTransition(async () => {
@@ -183,6 +183,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
       // Dépot vers la banque (retrait du planning)
       if (!isFromBank) {
         const planningId = draggableId.replace("planning_", "");
+        removeLocalPlanning(planningId);
         setLocalPlannings(prev => prev.filter(p => p.id !== planningId));
         
         startTransition(async () => {
@@ -198,6 +199,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     
     if (!recipeId) {
       if (currentPlanningId) {
+        removeLocalPlanning(currentPlanningId);
         setLocalPlannings(prev => prev.filter(p => p.id !== currentPlanningId));
         startTransition(async () => {
           await removeMeal(currentPlanningId);
@@ -210,11 +212,11 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     const recipe = allRecipes.find(r => r.id === recipeId);
     if (!recipe) return;
 
-    // Mise à jour optimiste
-    const tempId = currentPlanningId || "temp_" + Date.now();
-    const updated = localPlannings.filter(p => !(isSameDay(p.date, targetDate) && p.mealTime === mealTime));
-    updated.push({ id: tempId, recipe, date: targetDate, mealTime });
-    setLocalPlannings(updated);
+    const tempId = currentPlanningId || "plan_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+    const newMeal: PlannedMeal = { id: tempId, recipe, date: targetDate, mealTime };
+
+    saveLocalPlanning(newMeal);
+    setLocalPlannings(prev => [...prev.filter(p => p.id !== currentPlanningId), newMeal]);
 
     startTransition(async () => {
       await assignMeal(recipeId, targetDate.toISOString(), mealTime, currentPlanningId);
@@ -223,6 +225,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   };
 
   const handleRemoveMeal = (planningId: string) => {
+    removeLocalPlanning(planningId);
     setLocalPlannings(prev => prev.filter(p => p.id !== planningId));
     startTransition(async () => {
       await removeMeal(planningId);
@@ -288,7 +291,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           )}
 
           <p className="text-sm text-secondary" style={{ marginBottom: "1rem" }}>
-            Glissez une recette vers un créneau du semainier puis lâchez-la pour la déposer.
+            Glissez vos recettes sur n'importe quel créneau du semainier.
           </p>
 
           <Droppable droppableId="recipe-bank">
@@ -359,12 +362,43 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         {/* Semainier (Destinations) */}
         <div className="card planner-grid-card">
           <div className="planner-header">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
               <div>
                 <h2>📅 Semainier de Repas</h2>
                 <p className="text-sm text-secondary">
                   Semaine du {format(startDate, "dd MMMM", { locale: fr })} au {format(addDays(startDate, 6), "dd MMMM yyyy", { locale: fr })}
                 </p>
+              </div>
+
+              {/* ── NOUVELLE BARRE DE NAVIGATION PAR SEMAINE (◀ ▶) ── */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "var(--surface-hover)", padding: "0.4rem 0.75rem", borderRadius: "999px", border: "1px solid var(--border)" }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ padding: "0.2rem 0.6rem", fontWeight: 700, fontSize: "0.9rem" }}
+                  onClick={() => setWeekOffset(prev => prev - 1)}
+                  title="Semaine précédente"
+                >
+                  ◀
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem", background: "white" }}
+                  onClick={() => setWeekOffset(0)}
+                  title="Revenir à aujourd'hui"
+                >
+                  {weekOffset === 0 ? "Aujourd'hui" : `Semaine (${weekOffset > 0 ? `+${weekOffset}` : weekOffset})`}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ padding: "0.2rem 0.6rem", fontWeight: 700, fontSize: "0.9rem" }}
+                  onClick={() => setWeekOffset(prev => prev + 1)}
+                  title="Semaine suivante"
+                >
+                  ▶
+                </button>
               </div>
 
               {/* Mode de vue sur Smartphone */}
@@ -374,7 +408,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                   className={`view-toggle-btn ${mobileMode === "all" ? "active" : ""}`}
                   onClick={() => { setMobileMode("all"); setActiveDayIndex(null); }}
                 >
-                  Vue Semaine (Défilant)
+                  Vue Semaine
                 </button>
                 <button
                   type="button"
@@ -407,7 +441,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
             </div>
           )}
 
-          {/* Vue Grille Bureau (Tableau 4 créneaux pour grand écran) */}
+          {/* Vue Grille Bureau (Tableau 4 créneaux avec Fond Uni) */}
           <div className="desktop-planner-table">
             <div className="planner-table-header">
               <div>Jour</div>
@@ -428,7 +462,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                   </div>
 
                   {MEALS.map((m) => {
-                    const planned = localPlannings.find(
+                    const plannedMeals = localPlannings.filter(
                       p => isSameDay(p.date, currentDate) && p.mealTime === m.key
                     );
 
@@ -439,33 +473,40 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                             ref={provided.innerRef}
                             {...provided.droppableProps}
                             className={`meal-slot ${snapshot.isDraggingOver ? 'slot-hover' : ''}`}
+                            style={{
+                              background: snapshot.isDraggingOver ? "var(--primary-light)" : "var(--surface-hover)",
+                              borderRadius: "var(--radius-md)",
+                              minHeight: "56px",
+                              padding: "0.35rem",
+                              transition: "background 0.2s ease, border-color 0.2s ease"
+                            }}
                           >
-                            {planned ? (
-                              <Draggable key={`planning_${planned.id}`} draggableId={`planning_${planned.id}`} index={0}>
-                                {(provided, snapshot) => (
-                                  <div
-                                    ref={provided.innerRef}
-                                    {...provided.draggableProps}
-                                    {...provided.dragHandleProps}
-                                    className={`planned-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
-                                  >
-                                    <div className="planned-title">{planned.recipe.title}</div>
-                                    <button
-                                      type="button"
-                                      className="remove-btn"
-                                      title="Retirer du planning"
-                                      onClick={() => handleRemoveMeal(planned.id)}
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                )}
-                              </Draggable>
-                            ) : (
-                              <div className="empty-slot">
-                                <span className="empty-text">+ Glisser ici</span>
+                            {plannedMeals.length > 0 ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                                {plannedMeals.map((planned, pIdx) => (
+                                  <Draggable key={`planning_${planned.id}`} draggableId={`planning_${planned.id}`} index={pIdx}>
+                                    {(provided, snapshot) => (
+                                      <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        className={`planned-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
+                                      >
+                                        <div className="planned-title">{planned.recipe.title}</div>
+                                        <button
+                                          type="button"
+                                          className="remove-btn"
+                                          title="Retirer du planning"
+                                          onClick={() => handleRemoveMeal(planned.id)}
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    )}
+                                  </Draggable>
+                                ))}
                               </div>
-                            )}
+                            ) : null}
                             {provided.placeholder}
                           </div>
                         )}
@@ -496,12 +537,13 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
                   <div className="mobile-meals-grid">
                     {MEALS.map((m) => {
-                      const planned = localPlannings.find(
+                      const plannedMeals = localPlannings.filter(
                         p => isSameDay(p.date, currentDate) && p.mealTime === m.key
                       );
+                      const primaryPlanned = plannedMeals[0];
 
                       return (
-                        <div key={m.key} className="mobile-meal-slot-box">
+                        <div key={m.key} className="mobile-meal-slot-box" style={{ background: "var(--surface-hover)", borderRadius: "var(--radius-md)", padding: "0.75rem" }}>
                           <div className="mobile-meal-slot-header">
                             <span>{m.icon}</span> <strong>{m.label}</strong>
                           </div>
@@ -509,8 +551,8 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                           <div className="mobile-meal-slot-select-wrapper">
                             <select
                               className="input-field mobile-meal-select"
-                              value={planned ? planned.recipe.id : ""}
-                              onChange={(e) => handleSelectMeal(dayIndex, m.key, e.target.value, planned?.id)}
+                              value={primaryPlanned ? primaryPlanned.recipe.id : ""}
+                              onChange={(e) => handleSelectMeal(dayIndex, m.key, e.target.value, primaryPlanned?.id)}
                             >
                               <option value="">-- Ajouter un repas --</option>
                               {allRecipes.map((r) => (
@@ -520,11 +562,11 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                               ))}
                             </select>
                             
-                            {planned && (
+                            {primaryPlanned && (
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm remove-meal-btn"
-                                onClick={() => handleRemoveMeal(planned.id)}
+                                onClick={() => handleRemoveMeal(primaryPlanned.id)}
                                 title="Supprimer"
                               >
                                 ✕
