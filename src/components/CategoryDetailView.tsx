@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { getLocalRecipes } from "../lib/storage";
 
@@ -25,7 +25,7 @@ export default function CategoryDetailView({
 }) {
   const [category, setCategory] = useState<Category>(initialCategory);
 
-  useEffect(() => {
+  const refreshCategoryData = useCallback(() => {
     const localRecipes = getLocalRecipes();
     
     // Dupliquer la liste initiale des ingrédients
@@ -85,6 +85,19 @@ export default function CategoryDetailView({
     });
   }, [initialCategory]);
 
+  useEffect(() => {
+    refreshCategoryData();
+
+    const handleUpdate = () => refreshCategoryData();
+    window.addEventListener("mealfresh_recipes_updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+
+    return () => {
+      window.removeEventListener("mealfresh_recipes_updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+    };
+  }, [refreshCategoryData]);
+
   return (
     <div>
       <div className="page-header">
@@ -133,7 +146,7 @@ export default function CategoryDetailView({
                       <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 600 }}>Présent dans :</span>
                       <ul style={{ marginTop: "0.4rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                         {ing.recipes.map((ri: any, rIdx: number) => (
-                          <li key={`${ri.recipe.id}_${rIdx}`} style={{ fontSize: "0.85rem", background: "var(--primary-light)", padding: "0.35rem 0.65rem", borderRadius: "var(--radius-sm)" }}>
+                          <li key={`${ri.recipe.id}_${rIdx}`} style={{ fontSize: "0.85rem", background: "var(--primary-light)", padding: "0.35rem 0.65rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--primary-mid)" }}>
                             <strong>📖 {ri.recipe.title}</strong> {ri.quantity && <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>({ri.quantity})</span>}
                           </li>
                         ))}

@@ -90,6 +90,7 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
       urlSource,
       instructions,
       ingredients,
+      categories,
     });
 
     startTransition(async () => {
@@ -124,7 +125,7 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
 
   if (editing) {
     return (
-      <div className="card" style={{ border: "2px solid var(--primary)", opacity: isPending ? 0.6 : 1 }}>
+      <div className="card" style={{ border: "2px solid var(--primary)", opacity: isPending ? 0.6 : 1, padding: "1.25rem", maxWidth: "100%", overflow: "hidden" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <div className="input-group" style={{ marginBottom: 0 }}>
             <label className="input-label">Titre *</label>
@@ -177,32 +178,33 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   }
 
   return (
-    <div className="card" style={{ position: "relative", opacity: isPending ? 0.6 : 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+    <div className="card" style={{ padding: "1.25rem", opacity: isPending ? 0.6 : 1, display: "flex", flexDirection: "column", justifyContent: "space-between", maxWidth: "100%", overflow: "hidden" }}>
       <div>
-        <div style={{ position: "absolute", top: "1rem", right: "1rem", display: "flex", gap: "0.4rem" }}>
-          <button onClick={() => setEditing(true)} title="Modifier" style={{ background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "0.35rem 0.55rem", cursor: "pointer" }}>✏️</button>
-          {confirmDelete ? (
-            <>
-              <button onClick={handleDelete} disabled={isPending} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.35rem 0.65rem", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem" }}>Oui</button>
-              <button onClick={() => setConfirmDelete(false)} disabled={isPending} style={{ background: "var(--border)", border: "none", borderRadius: "var(--radius-md)", padding: "0.35rem 0.55rem", cursor: "pointer" }}>✕</button>
-            </>
-          ) : (
-            <button onClick={() => setConfirmDelete(true)} title="Supprimer" style={{ background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "0.35rem 0.55rem", cursor: "pointer" }}>🗑️</button>
-          )}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", marginBottom: "0.75rem" }}>
+          <h3 style={{ margin: 0, fontSize: "1.1rem", wordBreak: "break-word" }}>{recipe.title}</h3>
+          <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0 }}>
+            <button onClick={() => setEditing(true)} title="Modifier" style={{ background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "0.35rem 0.55rem", cursor: "pointer", fontSize: "0.85rem" }}>✏️</button>
+            {confirmDelete ? (
+              <>
+                <button onClick={handleDelete} disabled={isPending} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.35rem 0.65rem", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem" }}>Oui</button>
+                <button onClick={() => setConfirmDelete(false)} disabled={isPending} style={{ background: "var(--border)", border: "none", borderRadius: "var(--radius-md)", padding: "0.35rem 0.55rem", cursor: "pointer", fontSize: "0.8rem" }}>✕</button>
+              </>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} title="Supprimer" style={{ background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "0.35rem 0.55rem", cursor: "pointer", fontSize: "0.85rem" }}>🗑️</button>
+            )}
+          </div>
         </div>
 
-        <h3 style={{ marginBottom: "0.5rem", paddingRight: "5.5rem" }}>{recipe.title}</h3>
-
         {recipe.urlSource && (
-          <a href={recipe.urlSource} target="_blank" rel="noopener noreferrer" style={{ color: "var(--primary)", fontSize: "0.85rem", textDecoration: "none" }}>
+          <a href={recipe.urlSource} target="_blank" rel="noopener noreferrer" style={{ color: "var(--primary)", fontSize: "0.85rem", textDecoration: "none", display: "inline-block", marginBottom: "0.5rem" }}>
             🔗 Lien de la recette
           </a>
         )}
 
         {recipe.ingredients.length > 0 && (
-          <div style={{ marginTop: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+          <div style={{ marginTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
             {recipe.ingredients.map(ri => (
-              <span key={ri.ingredient.id} style={{ background: "var(--primary-light)", border: "1px solid var(--border)", borderRadius: "999px", padding: "0.2rem 0.65rem", fontSize: "0.78rem", color: "var(--text-primary)" }}>
+              <span key={ri.ingredient.id} style={{ background: "var(--primary-light)", border: "1px solid var(--primary-mid)", borderRadius: "999px", padding: "0.2rem 0.65rem", fontSize: "0.78rem", color: "var(--text-primary)" }}>
                 {CATEGORY_EMOJIS[ri.ingredient.category.name] ?? "🍽️"} {ri.quantity ? `${ri.quantity} ` : ""}{ri.ingredient.name}
               </span>
             ))}
@@ -219,7 +221,7 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
       {/* Bouton rapide d'ajout au Planning */}
       <div style={{ marginTop: "1.25rem", paddingTop: "0.75rem", borderTop: "1px dashed var(--border)" }}>
         {showPlanMenu ? (
-          <div style={{ background: "var(--bg)", padding: "0.75rem", borderRadius: "var(--radius-md)", border: "1px solid var(--primary)" }}>
+          <div style={{ background: "var(--bg)", padding: "0.75rem", borderRadius: "var(--radius-md)", border: "1px solid var(--primary)", maxWidth: "100%", overflow: "hidden" }}>
             {planSuccessMsg ? (
               <div style={{ fontSize: "0.85rem", color: "var(--accent)", fontWeight: 600, textAlign: "center" }}>
                 {planSuccessMsg}
@@ -231,12 +233,12 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
                   <button type="button" onClick={() => setShowPlanMenu(false)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: "0.9rem" }}>✕</button>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem" }}>
-                  <select className="input-field input-sm" style={{ marginBottom: 0 }} value={selectedDay} onChange={e => setSelectedDay(parseInt(e.target.value, 10))}>
+                  <select className="input-field input-sm" style={{ marginBottom: 0, maxWidth: "100%" }} value={selectedDay} onChange={e => setSelectedDay(parseInt(e.target.value, 10))}>
                     {DAYS.map((d, i) => (
                       <option key={i} value={i}>{d}</option>
                     ))}
                   </select>
-                  <select className="input-field input-sm" style={{ marginBottom: 0 }} value={selectedMeal} onChange={e => setSelectedMeal(e.target.value as any)}>
+                  <select className="input-field input-sm" style={{ marginBottom: 0, maxWidth: "100%" }} value={selectedMeal} onChange={e => setSelectedMeal(e.target.value as any)}>
                     {MEALS.map(m => (
                       <option key={m.key} value={m.key}>{m.icon} {m.label}</option>
                     ))}

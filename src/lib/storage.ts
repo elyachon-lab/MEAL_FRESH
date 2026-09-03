@@ -30,6 +30,12 @@ export type LocalPlanning = {
 const RECIPES_KEY = "mealfresh_local_recipes_v2";
 const PLANNINGS_KEY = "mealfresh_local_plannings_v2";
 
+function notifyRecipeUpdate() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("mealfresh_recipes_updated"));
+  }
+}
+
 export function getLocalRecipes(): LocalRecipe[] {
   if (typeof window === "undefined") return [];
   try {
@@ -89,6 +95,7 @@ export function saveLocalRecipe(data: {
   const updated = [newRecipe, ...current.filter(r => r.id !== id)];
   try {
     localStorage.setItem(RECIPES_KEY, JSON.stringify(updated));
+    notifyRecipeUpdate();
   } catch (e) {}
 
   return newRecipe;
@@ -99,6 +106,7 @@ export function deleteLocalRecipe(id: string) {
   const updated = current.filter(r => r.id !== id);
   try {
     localStorage.setItem(RECIPES_KEY, JSON.stringify(updated));
+    notifyRecipeUpdate();
   } catch (e) {}
 }
 

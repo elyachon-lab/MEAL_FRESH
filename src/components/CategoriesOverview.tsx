@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { getLocalRecipes } from "../lib/storage";
 
@@ -21,7 +21,7 @@ function getCategoryEmoji(name: string): string {
 export default function CategoriesOverview({ initialCategories }: { initialCategories: any[] }) {
   const [categories, setCategories] = useState(initialCategories);
 
-  useEffect(() => {
+  const refreshCounts = useCallback(() => {
     const localRecipes = getLocalRecipes();
     const map = new Map<string, Set<string>>();
 
@@ -61,6 +61,19 @@ export default function CategoriesOverview({ initialCategories }: { initialCateg
 
     setCategories(updated);
   }, [initialCategories]);
+
+  useEffect(() => {
+    refreshCounts();
+
+    const handleUpdate = () => refreshCounts();
+    window.addEventListener("mealfresh_recipes_updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+
+    return () => {
+      window.removeEventListener("mealfresh_recipes_updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+    };
+  }, [refreshCounts]);
 
   return (
     <div>

@@ -51,6 +51,7 @@ export async function createRecipe(data: FormData) {
     revalidatePath("/");
     revalidatePath("/recipes");
     revalidatePath("/planning");
+    revalidatePath("/ingredients", "layout");
 
     return { success: true, id: created.id };
   } catch (err: any) {
@@ -103,7 +104,7 @@ export async function createRecipeWithIngredients(data: {
     revalidatePath("/");
     revalidatePath("/recipes");
     revalidatePath("/planning");
-    revalidatePath("/ingredients");
+    revalidatePath("/ingredients", "layout");
 
     return { success: true, id: createdRecipe.id };
   } catch (err: any) {
@@ -119,6 +120,7 @@ export async function deleteRecipe(id: string) {
     revalidatePath("/");
     revalidatePath("/recipes");
     revalidatePath("/planning");
+    revalidatePath("/ingredients", "layout");
     return { success: true };
   } catch (err: any) {
     console.error("Error in deleteRecipe:", err);
@@ -174,11 +176,11 @@ export async function updateRecipeWithIngredients(data: {
     revalidatePath("/");
     revalidatePath("/recipes");
     revalidatePath("/planning");
-    revalidatePath("/ingredients");
+    revalidatePath("/ingredients", "layout");
 
     return { success: true };
   } catch (err: any) {
     console.error("Error in updateRecipeWithIngredients:", err);
-    return { success: false, error: err?.message || "Erreur lors de la mise à jour." };
+    return { success: false, error: err?.message || "Erreur me lors de la mise à jour." };
   }
 }
