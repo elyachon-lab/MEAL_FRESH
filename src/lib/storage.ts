@@ -174,17 +174,40 @@ export function removeLocalPlanning(id: string) {
   } catch (e) {}
 }
 
+function isSameDaySimple(d1: Date | string, d2: Date | string): boolean {
+  const date1 = new Date(d1);
+  const date2 = new Date(d2);
+  return (
+    date1.getUTCFullYear() === date2.getUTCFullYear() &&
+    date1.getUTCMonth() === date2.getUTCMonth() &&
+    date1.getUTCDate() === date2.getUTCDate()
+  );
+}
+
 export function mergePlannings(serverPlannings: any[] = []): any[] {
   const local = getLocalPlannings();
-  const serverMap = new Map(serverPlannings.map(p => [p.id, p]));
-  
-  local.forEach(p => {
-    if (!serverMap.has(p.id)) {
-      serverMap.set(p.id, p);
+  const map = new Map<string, any>();
+
+  serverPlannings.forEach(p => {
+    map.set(p.id, p);
+  });
+
+  local.forEach(loc => {
+    if (!map.has(loc.id)) {
+      const isDuplicate = Array.from(map.values()).some(serv => {
+        const sameDate = isSameDaySimple(serv.date, loc.date);
+        const sameMeal = serv.mealTime === loc.mealTime;
+        const sameRecipe = ((serv as any).recipeId || serv.recipe?.id) === ((loc as any).recipeId || loc.recipe?.id);
+        return sameDate && sameMeal && sameRecipe;
+      });
+
+      if (!isDuplicate) {
+        map.set(loc.id, loc);
+      }
     }
   });
 
-  return Array.from(serverMap.values());
+  return Array.from(map.values());
 }
 
 /* ── PERSISTENCE DU BUDGET ET DES DÉPENSES ── */
@@ -240,12 +263,10 @@ export function mergeExpenses(serverExpenses: any[] = [], monthStr: string): any
   const local = getLocalExpenses().filter(e => e.monthStr === monthStr);
   const map = new Map<string, any>();
 
-  // D'abord intégrer les dépenses du serveur
   serverExpenses.forEach(e => {
     map.set(e.id, e);
   });
 
-  // Ensuite intégrer les dépenses locales (si l'ID n'est pas déjà dans le serveur ET que la signature n'existe pas déjà)
   local.forEach(loc => {
     if (!map.has(loc.id)) {
       const isDuplicate = Array.from(map.values()).some(serv => 

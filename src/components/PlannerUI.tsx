@@ -215,14 +215,14 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         removeLocalPlanning(rawPlanningId);
         setLocalPlannings(prev => [...prev.filter(p => p.id !== rawPlanningId), newMeal]);
       } else {
-        setLocalPlannings(prev => [...prev, newMeal]);
+        setLocalPlannings(prev => [...prev.filter(p => p.id !== tempId), newMeal]);
       }
 
       startTransition(async () => {
         if (isFromBank && recipeId) {
-          await assignMeal(recipeId, targetDate.toISOString(), mealTime as MealKey);
+          await assignMeal(recipeId, targetDate.toISOString(), mealTime as MealKey, undefined, tempId);
         } else if (rawPlanningId) {
-          await assignMeal(recipeToAssign.id, targetDate.toISOString(), mealTime as MealKey, rawPlanningId);
+          await assignMeal(recipeToAssign.id, targetDate.toISOString(), mealTime as MealKey, rawPlanningId, tempId);
         }
         router.refresh();
       });
@@ -261,10 +261,10 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     const newMeal: PlannedMeal = { id: tempId, recipe, date: targetDate, mealTime };
 
     saveLocalPlanning(newMeal);
-    setLocalPlannings(prev => [...prev.filter(p => p.id !== currentPlanningId), newMeal]);
+    setLocalPlannings(prev => [...prev.filter(p => p.id !== currentPlanningId && p.id !== tempId), newMeal]);
 
     startTransition(async () => {
-      await assignMeal(recipeId, targetDate.toISOString(), mealTime, currentPlanningId);
+      await assignMeal(recipeId, targetDate.toISOString(), mealTime, currentPlanningId, tempId);
       router.refresh();
     });
   };

@@ -36,7 +36,8 @@ export async function assignMeal(
   recipeId: string, 
   dateInput: string | Date, 
   mealTime: "Matin" | "Midi" | "Goûter" | "Soir", 
-  existingPlanningId?: string
+  existingPlanningId?: string,
+  customId?: string
 ) {
   try {
     await ensureDatabaseSchema();
@@ -47,11 +48,12 @@ export async function assignMeal(
     if (existingPlanningId) {
       await prisma.planning.update({
         where: { id: existingPlanningId },
-        data: { date, mealTime },
+        data: { date, mealTime, recipeId },
       });
     } else {
       await prisma.planning.create({
         data: {
+          ...(customId ? { id: customId } : {}),
           recipeId,
           date,
           mealTime,
