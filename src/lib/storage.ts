@@ -1,5 +1,7 @@
 "use client";
 
+import { inferCategoryName } from "./emojis";
+
 export type LocalIngredient = {
   name: string;
   categoryId: string;
@@ -58,17 +60,17 @@ export function saveLocalRecipe(data: {
   const id = data.id || "rec_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
   
   const categoriesList = data.categories || [];
-  const getCatName = (catId: string, fallbackName?: string) => {
+  const getCatName = (catId: string, ingName: string, fallbackName?: string) => {
     if (fallbackName && fallbackName !== "Général") return fallbackName;
     const found = categoriesList.find(c => c.id === catId || c.name.toLowerCase() === catId.toLowerCase());
     if (found) return found.name;
-    return fallbackName || "Général";
+    return inferCategoryName(ingName);
   };
 
   const formattedIngredients = (data.ingredients || []).map(ing => {
     const rawIngName = ing.ingredient?.name || ing.name || "Ingrédient";
     const catId = ing.ingredient?.category?.id || ing.categoryId || "cat_default";
-    const catName = getCatName(catId, ing.ingredient?.category?.name || ing.categoryName);
+    const catName = getCatName(catId, rawIngName, ing.ingredient?.category?.name || ing.categoryName);
 
     return {
       quantity: ing.quantity || null,

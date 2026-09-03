@@ -1,6 +1,37 @@
 /**
-  Dictionnaire intelligent d'emojis pour les ingrédients
-*/
+ * Infère le nom de la catégorie à partir du nom d'un ingrédient
+ */
+export function inferCategoryName(ingredientName: string): string {
+  const n = ingredientName.toLowerCase().trim();
+  
+  if (n.includes("poulet") || n.includes("boeuf") || n.includes("bœuf") || n.includes("viande") || n.includes("steak") || n.includes("saumon") || n.includes("poisson") || n.includes("lardon") || n.includes("jambon") || n.includes("bacon") || n.includes("crevette") || n.includes("oeuf") || n.includes("œuf") || n.includes("dinde") || n.includes("thon") || n.includes("saucisse")) {
+    return "Protéines";
+  }
+  if (n.includes("riz") || n.includes("pâte") || n.includes("spaghetti") || n.includes("penne") || n.includes("coquillette") || n.includes("pain") || n.includes("baguette") || n.includes("pomme de terre") || n.includes("patate") || n.includes("frite") || n.includes("maïs") || n.includes("blé") || n.includes("quinoa") || n.includes("farine") || n.includes("semoule")) {
+    return "Glucides";
+  }
+  if (n.includes("brocoli") || n.includes("tomate") || n.includes("carotte") || n.includes("avocat") || n.includes("poivron") || n.includes("concombre") || n.includes("courgette") || n.includes("salade") || n.includes("épinard") || n.includes("oignon") || n.includes("ail") || n.includes("champignon") || n.includes("aubergine") || n.includes("chou")) {
+    return "Légumes";
+  }
+  if (n.includes("pomme") || n.includes("banane") || n.includes("citron") || n.includes("fraise") || n.includes("framboise") || n.includes("orange") || n.includes("pêche") || n.includes("abricot") || n.includes("ananas") || n.includes("kiwi")) {
+    return "Fruits";
+  }
+  if (n.includes("fromage") || n.includes("mozzarella") || n.includes("emmental") || n.includes("parmesan") || n.includes("cheddar") || n.includes("lait") || n.includes("crème") || n.includes("yaourt") || n.includes("beurre")) {
+    return "Produits Laitiers";
+  }
+  if (n.includes("huile") || n.includes("olive")) {
+    return "Matières Grasses";
+  }
+  if (n.includes("sel") || n.includes("poivre") || n.includes("épice") || n.includes("curry") || n.includes("basilic") || n.includes("persil") || n.includes("herbe")) {
+    return "Épices & Condiments";
+  }
+
+  return "Glucides";
+}
+
+/**
+ * Dictionnaire intelligent d'emojis pour les ingrédients
+ */
 export function getIngredientEmoji(name: string = "", categoryName: string = ""): string {
   const n = name.toLowerCase().trim();
 
@@ -41,7 +72,7 @@ export function getIngredientEmoji(name: string = "", categoryName: string = "")
 
   // Huiles, Condiments & Épices
   if (n.includes("olive") || n.includes("huile")) return "🫒";
-  if (n.includes("sel") || n.includes("poivre") || n.includes("épice") || n.includes("curry") || n.includes("herbe") || n.includes("basilic") || n.includes("persil")) return "🌿";
+  if (n.includes("sel") || n.includes("poivre") || n.includes("épice") || n.includes("curry") || n.includes("basilic") || n.includes("persil") || n.includes("herbe")) return "🌿";
 
   // Fruits & Sucré
   if (n.includes("pomme") && !n.includes("terre")) return "🍎";
