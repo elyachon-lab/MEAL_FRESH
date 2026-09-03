@@ -2,88 +2,74 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { getLocalRecipes } from "../lib/storage";
-import { getIngredientEmoji } from "../lib/emojis";
-
-type Ingredient = {
-  id: string;
-  name: string;
-  recipes: any[];
-};
+import { getLocalRecipes, mergeRecipes } from "../lib/storage";
+import { getIngredientEmoji, inferCategoryName } from "../lib/emojis";
 
 type Category = {
   id: string;
   name: string;
-  ingredients: Ingredient[];
+  ingredients?: any[];
 };
 
 export default function CategoryDetailView({
   initialCategory,
+  serverRecipes = [],
   addIngredientAction,
 }: {
   initialCategory: Category;
+  serverRecipes?: any[];
   addIngredientAction: (formData: FormData) => Promise<void>;
 }) {
-  const [category, setCategory] = useState<Category>(initialCategory);
-  const [selectedIngId, setSelectedIngId] = useState<string | null>(null);
+  const [allCategoryRecipes, setAllCategoryRecipes] = useState<any[]>([]);
+  const [categoryIngredients, setCategoryIngredients] = useState<{ name: string; emoji: string; count: number }[]>([]);
+  const [selectedIngName, setSelectedIngName] = useState<string | null>(null);
 
   const refreshCategoryData = useCallback(() => {
-    const localRecipes = getLocalRecipes();
+    // Fusionner toutes les recettes (serveur + localStorage)
+    const recipes = mergeRecipes(serverRecipes);
     
-    // Dupliquer la liste initiale des ingrédients
-    const ingredientMap = new Map<string, Ingredient>();
-    
-    initialCategory.ingredients.forEach(ing => {
-      ingredientMap.set(ing.name.toLowerCase().trim(), {
-        id: ing.id,
-        name: ing.name,
-        recipes: [...ing.recipes],
-      });
-    });
+    const matchingRecipesList: any[] = [];
+    const ingCountMap = new Map<string, number>();
 
-    // Parcourir les recettes enregistrées dans le localStorage du navigateur
-    localRecipes.forEach(rec => {
-      (rec.ingredients || []).forEach(ingLine => {
-        const ingName = ingLine.ingredient?.name || ingLine.name;
+    recipes.forEach(rec => {
+      let recipeBelongsToCategory = false;
+
+      (rec.ingredients || []).forEach((ri: any) => {
+        const ingName = ri.ingredient?.name || ri.name || "";
         if (!ingName) return;
 
-        const catId = ingLine.ingredient?.category?.id || ingLine.categoryId;
-        const catName = ingLine.ingredient?.category?.name || ingLine.categoryName;
+        const catId = ri.ingredient?.category?.id || ri.categoryId;
+        const catName = ri.ingredient?.category?.name || ri.categoryName || inferCategoryName(ingName);
 
+        // Vérifier si cet ingrédient correspond à la catégorie en cours (par ID ou par Nom)
         const isMatch =
           (catId && catId === initialCategory.id) ||
           (catName && catName.toLowerCase() === initialCategory.name.toLowerCase()) ||
           (catId && catId.toLowerCase() === initialCategory.name.toLowerCase());
 
         if (isMatch) {
-          const key = ingName.toLowerCase().trim();
-          const existingIng: Ingredient = ingredientMap.get(key) || {
-            id: "local_ing_" + Math.random().toString(36).substring(2, 6),
-            name: ingName,
-            recipes: [],
-          };
+          recipeBelongsToCategory = true;
 
-          const hasRecipe = existingIng.recipes.some(
-            (r: any) => r.recipe.id === rec.id || r.recipe.title.toLowerCase() === rec.title.toLowerCase()
-          );
-          
-          if (!hasRecipe) {
-            existingIng.recipes.push({
-              recipe: { id: rec.id, title: rec.title, ingredients: rec.ingredients, instructions: rec.instructions },
-              quantity: ingLine.quantity || null,
-            });
-          }
-
-          ingredientMap.set(key, existingIng);
+          const key = ingName.trim();
+          ingCountMap.set(key, (ingCountMap.get(key) || 0) + 1);
         }
       });
+
+      if (recipeBelongsToCategory) {
+        matchingRecipesList.push(rec);
+      }
     });
 
-    setCategory({
-      ...initialCategory,
-      ingredients: Array.from(ingredientMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
-    });
-  }, [initialCategory]);
+    // Formater la liste des ingrédients circulaires Jow
+    const ingBubbles = Array.from(ingCountMap.entries()).map(([name, count]) => ({
+      name,
+      emoji: getIngredientEmoji(name, initialCategory.name),
+      count,
+    })).sort((a, b) => b.count - a.count);
+
+    setAllCategoryRecipes(matchingRecipesList);
+    setCategoryIngredients(ingBubbles);
+  }, [initialCategory, serverRecipes]);
 
   useEffect(() => {
     refreshCategoryData();
@@ -98,23 +84,15 @@ export default function CategoryDetailView({
     };
   }, [refreshCategoryData]);
 
-  // Ingrédient actuellement sélectionné (ou null pour "Tous")
-  const selectedIngredient = category.ingredients.find(i => i.id === selectedIngId);
-
-  // Map unique des recettes à afficher
-  const displayedRecipesMap = new Map<string, any>();
-  const ingredientsToProcess = selectedIngredient ? [selectedIngredient] : category.ingredients;
-
-  ingredientsToProcess.forEach(ing => {
-    ing.recipes.forEach((ri: any) => {
-      const recId = ri.recipe.id || ri.recipe.title;
-      if (!displayedRecipesMap.has(recId)) {
-        displayedRecipesMap.set(recId, ri.recipe);
-      }
-    });
-  });
-
-  const displayedRecipesList = Array.from(displayedRecipesMap.values());
+  // Filtrer les recettes par ingrédient sélectionné si une bulle est cliquée
+  const displayedRecipes = selectedIngName
+    ? allCategoryRecipes.filter(rec =>
+        (rec.ingredients || []).some((ri: any) => {
+          const ingName = ri.ingredient?.name || ri.name || "";
+          return ingName.toLowerCase().trim() === selectedIngName.toLowerCase().trim();
+        })
+      )
+    : allCategoryRecipes;
 
   return (
     <div>
@@ -123,9 +101,9 @@ export default function CategoryDetailView({
           <Link href="/ingredients" style={{ color: "var(--primary)", textDecoration: "none", fontWeight: 600, marginBottom: "0.5rem", display: "inline-block" }}>
             ← Retour aux catégories
           </Link>
-          <h1>🥑 {category.name}</h1>
+          <h1>🥑 Catégorie : {initialCategory.name}</h1>
           <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-            Sélectionnez un ingrédient ci-dessous pour afficher ses recettes associées.
+            {allCategoryRecipes.length} recette{allCategoryRecipes.length > 1 ? "s" : ""} référencée{allCategoryRecipes.length > 1 ? "s" : ""} dans cette catégorie.
           </p>
         </div>
       </div>
@@ -134,30 +112,30 @@ export default function CategoryDetailView({
       <div style={{ marginBottom: "2rem", background: "var(--surface)", padding: "1.25rem", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h2 style={{ fontSize: "1.1rem", margin: 0 }}>
-            🛒 Ingrédients de la catégorie ({category.ingredients.length})
+            🛒 Ingrédients de la catégorie ({categoryIngredients.length})
           </h2>
-          {selectedIngId && (
+          {selectedIngName && (
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => setSelectedIngId(null)}
+              onClick={() => setSelectedIngName(null)}
               style={{ fontSize: "0.8rem", color: "var(--primary)" }}
             >
-              ✕ Voir toutes les recettes de la catégorie
+              ✕ Réinitialiser le filtre (Voir toutes les recettes)
             </button>
           )}
         </div>
 
-        {category.ingredients.length === 0 ? (
+        {categoryIngredients.length === 0 ? (
           <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-            Aucun ingrédient dans cette catégorie pour le moment.
+            Aucun ingrédient répertorié dans cette catégorie pour le moment.
           </p>
         ) : (
           <div style={{ display: "flex", gap: "1rem", overflowX: "auto", paddingBottom: "0.5rem", scrollbarWidth: "thin" }}>
             {/* Bulle "Tous" */}
             <button
               type="button"
-              onClick={() => setSelectedIngId(null)}
+              onClick={() => setSelectedIngName(null)}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -174,33 +152,32 @@ export default function CategoryDetailView({
                   width: "64px",
                   height: "64px",
                   borderRadius: "50%",
-                  background: selectedIngId === null ? "var(--primary-light)" : "var(--bg)",
-                  border: `2px solid ${selectedIngId === null ? "var(--primary)" : "var(--border)"}`,
+                  background: selectedIngName === null ? "var(--primary-light)" : "var(--bg)",
+                  border: `2px solid ${selectedIngName === null ? "var(--primary)" : "var(--border)"}`,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: "1.6rem",
-                  boxShadow: selectedIngId === null ? "var(--shadow-sm)" : "none",
+                  boxShadow: selectedIngName === null ? "var(--shadow-sm)" : "none",
                   transition: "all 0.2s ease",
-                  transform: selectedIngId === null ? "scale(1.05)" : "scale(1)",
+                  transform: selectedIngName === null ? "scale(1.05)" : "scale(1)",
                 }}
               >
                 🌟
               </div>
-              <span style={{ fontSize: "0.8rem", fontWeight: 700, color: selectedIngId === null ? "var(--primary)" : "var(--text-secondary)" }}>
-                Tous
+              <span style={{ fontSize: "0.8rem", fontWeight: 700, color: selectedIngName === null ? "var(--primary)" : "var(--text-secondary)" }}>
+                Tous ({allCategoryRecipes.length})
               </span>
             </button>
 
-            {/* Bulles d'ingrédients circulaires avec Emojis Précis (Style Jow) */}
-            {category.ingredients.map((ing) => {
-              const isSelected = selectedIngId === ing.id;
-              const emoji = getIngredientEmoji(ing.name, category.name);
+            {/* Bulles d'ingrédients circulaires (Style Jow) */}
+            {categoryIngredients.map((ing, i) => {
+              const isSelected = selectedIngName?.toLowerCase() === ing.name.toLowerCase();
               return (
                 <button
-                  key={ing.id}
+                  key={`${ing.name}_${i}`}
                   type="button"
-                  onClick={() => setSelectedIngId(isSelected ? null : ing.id)}
+                  onClick={() => setSelectedIngName(isSelected ? null : ing.name)}
                   style={{
                     display: "flex",
                     flexDirection: "column",
@@ -210,7 +187,7 @@ export default function CategoryDetailView({
                     cursor: "pointer",
                     gap: "0.4rem",
                     flexShrink: 0,
-                    maxWidth: "85px",
+                    maxWidth: "90px",
                   }}
                 >
                   <div
@@ -230,7 +207,7 @@ export default function CategoryDetailView({
                       transform: isSelected ? "translateY(-3px) scale(1.05)" : "scale(1)",
                     }}
                   >
-                    {emoji}
+                    {ing.emoji}
                     {isSelected && (
                       <span
                         style={{
@@ -247,7 +224,6 @@ export default function CategoryDetailView({
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          boxShadow: "0 2px 5px rgba(0,0,0,0.15)",
                         }}
                       >
                         ✓
@@ -269,7 +245,7 @@ export default function CategoryDetailView({
                     {ing.name}
                   </span>
                   <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "-0.2rem" }}>
-                    {ing.recipes.length} recette{ing.recipes.length > 1 ? "s" : ""}
+                    {ing.count} recette{ing.count > 1 ? "s" : ""}
                   </span>
                 </button>
               );
@@ -278,21 +254,21 @@ export default function CategoryDetailView({
         )}
       </div>
 
-      {/* ── SECTION RECETTES LINKÉES A LA CATÉGORIE ── */}
+      {/* ── SECTION RECETTES TROUVÉES POUR LA CATÉGORIE ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "1.75rem", alignItems: "start" }}>
         
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1.25rem" }}>
             <h2 style={{ fontSize: "1.25rem", margin: 0 }}>
-              📖 Recettes de la catégorie {selectedIngredient ? `"${selectedIngredient.name}"` : `"${category.name}"`}
+              📖 Recettes {selectedIngName ? `avec "${selectedIngName}"` : `de la catégorie ${initialCategory.name}`}
             </h2>
-            <span className="badge badge-accent">{displayedRecipesList.length} recette{displayedRecipesList.length > 1 ? "s" : ""}</span>
+            <span className="badge badge-accent">{displayedRecipes.length} recette{displayedRecipes.length > 1 ? "s" : ""}</span>
           </div>
 
-          {displayedRecipesList.length === 0 ? (
+          {displayedRecipes.length === 0 ? (
             <div className="card panel" style={{ textAlign: "center", padding: "3rem" }}>
               <p style={{ color: "var(--text-secondary)", marginBottom: "1rem" }}>
-                Aucune recette liée à {selectedIngredient ? `"${selectedIngredient.name}"` : "cette catégorie"} pour le moment.
+                Aucune recette répertoriée {selectedIngName ? `avec "${selectedIngName}"` : "dans cette catégorie"} pour le moment.
               </p>
               <Link href="/recipes" className="btn btn-primary btn-sm">
                 ➕ Créer une recette
@@ -300,25 +276,25 @@ export default function CategoryDetailView({
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.25rem" }}>
-              {displayedRecipesList.map((recipe, idx) => (
+              {displayedRecipes.map((recipe, idx) => (
                 <div key={`${recipe.id}_${idx}`} className="card" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.56rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
                       <span style={{ fontSize: "1.2rem" }}>🍲</span>
                       <h3 style={{ margin: 0, fontSize: "1.1rem", color: "var(--text-primary)" }}>{recipe.title}</h3>
                     </div>
 
-                    {/* Affichage complet des badges ingrédients de la recette */}
+                    {/* Affichage des badges d'ingrédients complets */}
                     {recipe.ingredients && recipe.ingredients.length > 0 && (
                       <div style={{ marginBottom: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
                         {recipe.ingredients.map((ri: any, qIdx: number) => {
-                          const ingName = ri.ingredient?.name || ri.name;
-                          const catName = ri.ingredient?.category?.name || ri.categoryName || category.name;
+                          const ingName = ri.ingredient?.name || ri.name || "";
+                          const catName = ri.ingredient?.category?.name || ri.categoryName || initialCategory.name;
                           const qty = ri.quantity ? `${ri.quantity} ` : "";
                           const emoji = getIngredientEmoji(ingName, catName);
-                          const isMatch = selectedIngredient
-                            ? ingName.toLowerCase().includes(selectedIngredient.name.toLowerCase())
-                            : true;
+                          const isMatch = selectedIngName
+                            ? ingName.toLowerCase().includes(selectedIngName.toLowerCase())
+                            : (catName.toLowerCase() === initialCategory.name.toLowerCase() || inferCategoryName(ingName).toLowerCase() === initialCategory.name.toLowerCase());
 
                           return (
                             <span

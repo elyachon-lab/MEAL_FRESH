@@ -1,6 +1,7 @@
 import prisma, { ensureDatabaseSchema } from "@/lib/prisma";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { getRecipes } from "@/app/actions/recipes";
 import CategoryDetailView from "@/components/CategoryDetailView";
 
 export const dynamic = "force-dynamic";
@@ -10,28 +11,13 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
   await ensureDatabaseSchema();
   const { categoryId } = await params;
 
+  const recipes = await getRecipes();
+
   let category = await prisma.category.findUnique({
     where: { id: categoryId },
     include: {
       ingredients: {
-        orderBy: { name: "asc" },
-        include: {
-          recipes: {
-            include: {
-              recipe: {
-                include: {
-                  ingredients: {
-                    include: {
-                      ingredient: {
-                        include: { category: true }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+        orderBy: { name: "asc" }
       }
     }
   });
@@ -40,24 +26,7 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
     const allCats = await prisma.category.findMany({
       include: {
         ingredients: {
-          orderBy: { name: "asc" },
-          include: {
-            recipes: {
-              include: {
-                recipe: {
-                  include: {
-                    ingredients: {
-                      include: {
-                        ingredient: {
-                          include: { category: true }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+          orderBy: { name: "asc" }
         }
       }
     });
@@ -99,6 +68,7 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
   return (
     <CategoryDetailView
       initialCategory={JSON.parse(JSON.stringify(activeCategory))}
+      serverRecipes={recipes}
       addIngredientAction={addIngredientAction}
     />
   );
