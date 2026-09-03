@@ -41,6 +41,19 @@ const MEALS = [
 
 type MealKey = "Matin" | "Midi" | "Goûter" | "Soir";
 
+// Fonction de comparaison de dates insensible au décalage horaire UTC/Local
+function isSameDay(d1: Date | string, d2: Date): boolean {
+  const date1 = new Date(d1);
+  return (
+    (date1.getUTCFullYear() === d2.getFullYear() &&
+     date1.getUTCMonth() === d2.getMonth() &&
+     date1.getUTCDate() === d2.getDate()) ||
+    (date1.getFullYear() === d2.getFullYear() &&
+     date1.getMonth() === d2.getMonth() &&
+     date1.getDate() === d2.getDate())
+  );
+}
+
 export default function PlannerUI({ recipes, plannings, categories = [] }: PlannerUIProps) {
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
@@ -51,6 +64,9 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   // Recettes combinées (serveur + persistance locale navigateur)
   const [allRecipes, setAllRecipes] = useState<Recipe[]>(recipes);
+  
+  // État optimiste du planning pour affichage immédiat au lâcher de la carte
+  const [localPlannings, setLocalPlannings] = useState<PlannedMeal[]>(plannings);
 
   // État formulaire édition rapide recette
   const [editTitle, setEditTitle] = useState("");
@@ -64,7 +80,8 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   useEffect(() => {
     setIsReady(true);
     setAllRecipes(mergeRecipes(recipes));
-  }, [recipes]);
+    setLocalPlannings(plannings);
+  }, [recipes, plannings]);
 
   const startEditRecipe = (recipe: Recipe) => {
     setEditingRecipe(recipe);
@@ -124,46 +141,89 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     const isFromBank = source.droppableId === "recipe-bank";
     const recipeId = isFromBank ? draggableId.replace("recipe_", "") : null;
     
-    startTransition(async () => {
-      if (destination.droppableId !== "recipe-bank") {
-        const [dayStr, mealTime] = destination.droppableId.split("-");
-        const dayOffset = parseInt(dayStr, 10);
-        const targetDate = addDays(startDate, dayOffset);
-        const targetDateStr = targetDate.toISOString();
-        
+    // Dépot dans le semainier
+    if (destination.droppableId !== "recipe-bank") {
+      const [dayStr, mealTime] = destination.droppableId.split("-");
+      const dayOffset = parseInt(dayStr, 10);
+      const targetDate = addDays(startDate, dayOffset);
+
+      const recipeToAssign = isFromBank
+        ? allRecipes.find(r => r.id === recipeId)
+        : localPlannings.find(p => p.id === draggableId.replace("planning_", ""))?.recipe;
+
+      if (!recipeToAssign) return;
+
+      // 1. MISE À JOUR OPTIMISTE IMMÉDIATE DU PLANNING AU MOMENT DU LÂCHER
+      const tempId = "temp_" + Date.now();
+      const updatedLocal = localPlannings.filter(p => {
+        // Retirer tout ancien repas sur ce créneau et ce jour
+        return !(isSameDay(p.date, targetDate) && p.mealTime === mealTime);
+      });
+
+      updatedLocal.push({
+        id: tempId,
+        recipe: recipeToAssign,
+        date: targetDate,
+        mealTime,
+      });
+
+      setLocalPlannings(updatedLocal);
+
+      // 2. SYNCHRONISATION SERVEUR EN ARRIÈRE-PLAN
+      startTransition(async () => {
         if (isFromBank && recipeId) {
-          await assignMeal(recipeId, targetDateStr, mealTime as MealKey);
+          await assignMeal(recipeId, targetDate.toISOString(), mealTime as MealKey);
         } else {
           const planningId = draggableId.replace("planning_", "");
-          await assignMeal("", targetDateStr, mealTime as MealKey, planningId);
+          await assignMeal(recipeToAssign.id, targetDate.toISOString(), mealTime as MealKey, planningId);
         }
-      } else {
-        if (!isFromBank) {
-          const planningId = draggableId.replace("planning_", "");
+        router.refresh();
+      });
+    } else {
+      // Dépot vers la banque (retrait du planning)
+      if (!isFromBank) {
+        const planningId = draggableId.replace("planning_", "");
+        setLocalPlannings(prev => prev.filter(p => p.id !== planningId));
+        
+        startTransition(async () => {
           await removeMeal(planningId);
-        }
+          router.refresh();
+        });
       }
-      router.refresh();
-    });
+    }
   };
 
   const handleSelectMeal = (dayIndex: number, mealTime: MealKey, recipeId: string, currentPlanningId?: string) => {
     const targetDate = addDays(startDate, dayIndex);
-    const targetDateStr = targetDate.toISOString();
     
-    startTransition(async () => {
-      if (!recipeId) {
-        if (currentPlanningId) {
+    if (!recipeId) {
+      if (currentPlanningId) {
+        setLocalPlannings(prev => prev.filter(p => p.id !== currentPlanningId));
+        startTransition(async () => {
           await removeMeal(currentPlanningId);
-        }
-      } else {
-        await assignMeal(recipeId, targetDateStr, mealTime, currentPlanningId);
+          router.refresh();
+        });
       }
+      return;
+    }
+
+    const recipe = allRecipes.find(r => r.id === recipeId);
+    if (!recipe) return;
+
+    // Mise à jour optimiste
+    const tempId = currentPlanningId || "temp_" + Date.now();
+    const updated = localPlannings.filter(p => !(isSameDay(p.date, targetDate) && p.mealTime === mealTime));
+    updated.push({ id: tempId, recipe, date: targetDate, mealTime });
+    setLocalPlannings(updated);
+
+    startTransition(async () => {
+      await assignMeal(recipeId, targetDate.toISOString(), mealTime, currentPlanningId);
       router.refresh();
     });
   };
 
   const handleRemoveMeal = (planningId: string) => {
+    setLocalPlannings(prev => prev.filter(p => p.id !== planningId));
     startTransition(async () => {
       await removeMeal(planningId);
       router.refresh();
@@ -174,7 +234,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div className="planner-container" style={{ opacity: isPending ? 0.8 : 1 }}>
+      <div className="planner-container" style={{ opacity: isPending ? 0.85 : 1 }}>
         
         {/* Banque de Recettes (Source) */}
         <div className="card recipe-bank-card">
@@ -228,7 +288,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           )}
 
           <p className="text-sm text-secondary" style={{ marginBottom: "1rem" }}>
-            Glissez une recette vers un créneau ou cliquez sur ✏️ pour la modifier.
+            Glissez une recette vers un créneau du semainier puis lâchez-la pour la déposer.
           </p>
 
           <Droppable droppableId="recipe-bank">
@@ -264,7 +324,8 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                             ...provided.draggableProps.style,
                             display: "flex",
                             justifyContent: "space-between",
-                            alignItems: "center"
+                            alignItems: "center",
+                            cursor: snapshot.isDragging ? "grabbing" : "grab"
                           }}
                         >
                           <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -367,8 +428,8 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                   </div>
 
                   {MEALS.map((m) => {
-                    const planned = plannings.find(
-                      p => new Date(p.date).getDay() === currentDate.getDay() && p.mealTime === m.key
+                    const planned = localPlannings.find(
+                      p => isSameDay(p.date, currentDate) && p.mealTime === m.key
                     );
 
                     return (
@@ -402,7 +463,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                               </Draggable>
                             ) : (
                               <div className="empty-slot">
-                                <span className="empty-text">+ Glisser</span>
+                                <span className="empty-text">+ Glisser ici</span>
                               </div>
                             )}
                             {provided.placeholder}
@@ -435,8 +496,8 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
                   <div className="mobile-meals-grid">
                     {MEALS.map((m) => {
-                      const planned = plannings.find(
-                        p => new Date(p.date).getDay() === currentDate.getDay() && p.mealTime === m.key
+                      const planned = localPlannings.find(
+                        p => isSameDay(p.date, currentDate) && p.mealTime === m.key
                       );
 
                       return (
