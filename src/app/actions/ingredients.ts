@@ -56,30 +56,51 @@ export async function getIngredients() {
 }
 
 /**
- * Trouve ou crée un ingrédient par son nom dans la catégorie donnée.
+ * Trouve ou crée un ingrédient par son nom en garantissant une catégorie valide en BDD.
  */
-export async function findOrCreateIngredient(name: string, categoryId: string): Promise<string> {
+export async function findOrCreateIngredient(name: string, categoryId?: string): Promise<string> {
   await ensureDatabaseSchema();
   const trimmed = name.trim();
   
-  let catId = categoryId;
-  if (!catId) {
-    const cats = await getCategories();
-    catId = cats[0]?.id;
-  }
-
-  const ingredientsInCategory = await prisma.ingredient.findMany({
-    where: { categoryId: catId }
-  });
-  
-  const existing = ingredientsInCategory.find(
+  // 1. Chercher si l'ingrédient existe déjà par son nom (insensible à la casse)
+  const allIngredients = await prisma.ingredient.findMany();
+  const existing = allIngredients.find(
     i => i.name.toLowerCase() === trimmed.toLowerCase()
   );
   if (existing) return existing.id;
 
+  // 2. Vérifier si la catégorie spécifiée existe réellement en BDD
+  let catId = categoryId;
+  let categoryExists = false;
+
+  if (catId) {
+    const foundCat = await prisma.category.findUnique({ where: { id: catId } });
+    if (foundCat) {
+      categoryExists = true;
+    }
+  }
+
+  // 3. Si la catégorie n'existe pas en BDD, utiliser la 1ère catégorie disponible
+  if (!categoryExists) {
+    const validCats = await getCategories();
+    catId = validCats[0]?.id;
+  }
+
+  // 4. Si aucune catégorie n'est disponible, créer une catégorie de secours
+  if (!catId) {
+    const fallbackCat = await prisma.category.upsert({
+      where: { name: "Autre" },
+      update: {},
+      create: { name: "Autre" },
+    });
+    catId = fallbackCat.id;
+  }
+
+  // 5. Créer l'ingrédient en toute sécurité avec la catégorie garantie
   const created = await prisma.ingredient.create({
     data: { name: trimmed, categoryId: catId }
   });
+
   revalidatePath("/ingredients");
   return created.id;
 }
@@ -87,8 +108,10 @@ export async function findOrCreateIngredient(name: string, categoryId: string): 
 export async function createIngredient(name: string, categoryId: string) {
   try {
     await ensureDatabaseSchema();
-    const ingredient = await prisma.ingredient.create({
-      data: { name, categoryId }
+    const ingId = await findOrCreateIngredient(name, categoryId);
+    const ingredient = await prisma.ingredient.findUnique({
+      where: { id: ingId },
+      include: { category: true }
     });
     revalidatePath("/ingredients");
     revalidatePath("/recipes");
