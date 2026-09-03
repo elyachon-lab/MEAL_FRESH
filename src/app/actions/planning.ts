@@ -4,6 +4,11 @@ import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { addDays } from "date-fns";
 
+// Helper de sérialisation JSON stricte pour React 19
+function toPlainObject<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
+
 // Récupérer le planning de la semaine courante
 export async function getWeeklyPlanning(startDate: Date) {
   const end = addDays(startDate, 6);
@@ -20,10 +25,7 @@ export async function getWeeklyPlanning(startDate: Date) {
     }
   });
 
-  return plannings.map(p => ({
-    ...p,
-    date: p.date.toISOString(),
-  }));
+  return toPlainObject(plannings);
 }
 
 // Ajouter ou déplacer un repas

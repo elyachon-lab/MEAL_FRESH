@@ -3,6 +3,10 @@
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
+function toPlainObject<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
+
 export async function getMonthlyBudget(monthStr: string) {
   let budget = await prisma.monthlyBudget.findUnique({
     where: { month: monthStr },
@@ -25,15 +29,7 @@ export async function getMonthlyBudget(monthStr: string) {
     });
   }
 
-  return {
-    ...budget,
-    createdAt: budget.createdAt.toISOString(),
-    expenses: budget.expenses.map((e) => ({
-      ...e,
-      date: e.date.toISOString(),
-      createdAt: e.createdAt.toISOString(),
-    })),
-  };
+  return toPlainObject(budget);
 }
 
 export async function updateBudgetAmount(monthStr: string, newAmount: number) {

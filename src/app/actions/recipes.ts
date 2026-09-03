@@ -4,6 +4,10 @@ import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { findOrCreateIngredient, getCategories } from "./ingredients";
 
+function toPlainObject<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
+
 export async function getRecipes() {
   const recipes = await prisma.recipe.findMany({
     orderBy: { createdAt: "desc" },
@@ -18,10 +22,7 @@ export async function getRecipes() {
     }
   });
 
-  return recipes.map(r => ({
-    ...r,
-    createdAt: r.createdAt.toISOString(),
-  }));
+  return toPlainObject(recipes);
 }
 
 export async function createRecipe(data: FormData) {
