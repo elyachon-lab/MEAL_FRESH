@@ -20,7 +20,14 @@ function toPlainObject<T>(data: T): T {
 export async function getCategories() {
   try {
     await ensureDatabaseSchema();
-    let categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
+    let categories = await prisma.category.findMany({
+      orderBy: { name: "asc" },
+      include: {
+        _count: {
+          select: { ingredients: true }
+        }
+      }
+    });
 
     // Si aucune catégorie n'existe encore, on peuple automatiquement les catégories par défaut
     if (categories.length === 0) {
@@ -31,7 +38,14 @@ export async function getCategories() {
           create: { name },
         });
       }
-      categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
+      categories = await prisma.category.findMany({
+        orderBy: { name: "asc" },
+        include: {
+          _count: {
+            select: { ingredients: true }
+          }
+        }
+      });
     }
 
     return toPlainObject(categories);
@@ -102,6 +116,7 @@ export async function findOrCreateIngredient(name: string, categoryId?: string):
   });
 
   revalidatePath("/ingredients");
+  revalidatePath("/recipes");
   return created.id;
 }
 
