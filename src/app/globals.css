@@ -395,11 +395,14 @@ textarea.input-field { resize: vertical; }
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 1.5rem;
+  max-width: 100%;
 }
 
 .recipe-bank-card {
   padding: 1.25rem;
   height: fit-content;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .recipe-bank-header {
@@ -407,16 +410,20 @@ textarea.input-field { resize: vertical; }
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.5rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .recipe-bank-list {
   min-height: 250px;
   max-height: 600px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0.5rem;
   border-radius: var(--radius-md);
   border: 2px dashed var(--border);
   transition: background 0.2s, border-color 0.2s;
+  max-width: 100%;
 }
 
 .recipe-bank-list.dragging-over {
@@ -439,6 +446,8 @@ textarea.input-field { resize: vertical; }
   transition: transform 0.15s, box-shadow 0.15s;
   display: flex;
   align-items: center;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .recipe-item:hover {
@@ -453,22 +462,28 @@ textarea.input-field { resize: vertical; }
 
 .planner-grid-card {
   padding: 1.5rem;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .planner-header {
   margin-bottom: 1.5rem;
+  max-width: 100%;
 }
 
-/* Grille Bureau (Tableau 4 créneaux) */
+/* Grille Bureau (Tableau 4 créneaux avec limites strictes) */
 .desktop-planner-table {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
 }
 
 .planner-table-header {
   display: grid;
-  grid-template-columns: 110px repeat(4, 1fr);
+  grid-template-columns: 110px repeat(4, minmax(110px, 1fr));
   gap: 0.75rem;
   font-weight: 700;
   font-family: 'Outfit', sans-serif;
@@ -476,13 +491,15 @@ textarea.input-field { resize: vertical; }
   font-size: 0.9rem;
   padding-bottom: 0.5rem;
   border-bottom: 2px solid var(--border);
+  min-width: 620px;
 }
 
 .planner-table-row {
   display: grid;
-  grid-template-columns: 110px repeat(4, 1fr);
+  grid-template-columns: 110px repeat(4, minmax(110px, 1fr));
   gap: 0.75rem;
   align-items: stretch;
+  min-width: 620px;
 }
 
 .day-label-cell {
@@ -496,13 +513,15 @@ textarea.input-field { resize: vertical; }
   background: var(--bg);
   padding: 0.5rem;
   border-radius: var(--radius-md);
-  min-height: 85px;
+  min-height: 56px;
   border: 2px dashed var(--border-strong);
   display: flex;
   flex-direction: column;
   justify-content: center;
   transition: all 0.2s;
   position: relative;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .meal-slot.slot-hover {
