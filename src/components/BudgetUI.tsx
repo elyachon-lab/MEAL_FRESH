@@ -53,7 +53,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     getLocalBudgetAmount(currentMonthStr, initialBudget.amount)
   );
 
-  // Liste des dépenses cumulées du mois (Persistées)
+  // Liste des dépenses cumulées du mois (Persistées sans doublons)
   const [expenses, setExpenses] = useState<ExpenseItem[]>(
     mergeExpenses(initialBudget.expenses, currentMonthStr)
   );
@@ -69,7 +69,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   const [expenseCategory, setExpenseCategory] = useState("Supermarché");
   const [expenseDescription, setExpenseDescription] = useState("");
 
-  // Recharger lors des changements de mois
+  // Recharger lors des changements de mois ou de données
   useEffect(() => {
     setBudgetAmount(getLocalBudgetAmount(currentMonthStr, initialBudget.amount));
     setExpenses(mergeExpenses(initialBudget.expenses, currentMonthStr));
@@ -135,14 +135,19 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     }
   };
 
-  // AJOUT D'UNE DÉPENSE (CUMUL IMMÉDIAT ET PERMANENT)
+  // AJOUT D'UNE DÉPENSE (SANS DOUBLON FOIS DEUX)
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isPending) return; // Bloquer les soumissions multiples accidentelles
+
     const amt = parseFloat(expenseAmount);
     if (isNaN(amt) || amt <= 0) return;
 
+    // Identifiant unique partagé client + serveur
+    const expenseId = "exp_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+
     const newExpenseObj = {
-      id: "exp_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+      id: expenseId,
       date: expenseDate,
       amount: amt,
       category: expenseCategory,
@@ -150,16 +155,17 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
       monthStr: currentMonthStr,
     };
 
-    // 1. Sauvegarde locale immédiate (Ajout instantané au cumul)
+    // 1. Sauvegarde locale unique
     saveLocalExpense(newExpenseObj);
-    setExpenses(prev => [newExpenseObj, ...prev]);
+    setExpenses(prev => [newExpenseObj, ...prev.filter(e => e.id !== expenseId)]);
 
     setExpenseAmount("");
     setExpenseDescription("");
 
-    // 2. Synchronisation serveur en arrière-plan
+    // 2. Synchronisation serveur avec l'ID identique
     startTransition(async () => {
       await addExpense({
+        id: expenseId,
         monthStr: currentMonthStr,
         dateStr: expenseDate,
         amount: amt,
@@ -371,8 +377,9 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                 type="submit"
                 className="btn btn-primary"
                 style={{ width: "100%", marginTop: "0.5rem" }}
+                disabled={isPending}
               >
-                ➕ Ajouter à la somme du mois
+                {isPending ? "Enregistrement..." : "➕ Ajouter à la somme du mois"}
               </button>
             </form>
           </div>
@@ -501,6 +508,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                               className="btn btn-ghost btn-sm"
                               title="Supprimer la dépense"
                               onClick={() => handleDeleteExpense(expense.id)}
+                              disabled={isPending}
                             >
                               🗑️
                             </button>

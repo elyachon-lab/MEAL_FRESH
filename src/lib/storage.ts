@@ -238,15 +238,29 @@ export function removeLocalExpense(id: string) {
 
 export function mergeExpenses(serverExpenses: any[] = [], monthStr: string): any[] {
   const local = getLocalExpenses().filter(e => e.monthStr === monthStr);
-  const serverMap = new Map(serverExpenses.map(e => [e.id, e]));
+  const map = new Map<string, any>();
 
-  local.forEach(e => {
-    if (!serverMap.has(e.id)) {
-      serverMap.set(e.id, e);
+  // D'abord intégrer les dépenses du serveur
+  serverExpenses.forEach(e => {
+    map.set(e.id, e);
+  });
+
+  // Ensuite intégrer les dépenses locales (si l'ID n'est pas déjà dans le serveur ET que la signature n'existe pas déjà)
+  local.forEach(loc => {
+    if (!map.has(loc.id)) {
+      const isDuplicate = Array.from(map.values()).some(serv => 
+        serv.category === loc.category &&
+        Math.abs(Number(serv.amount) - Number(loc.amount)) < 0.001 &&
+        (serv.description || "") === (loc.description || "")
+      );
+
+      if (!isDuplicate) {
+        map.set(loc.id, loc);
+      }
     }
   });
 
-  return Array.from(serverMap.values()).sort(
+  return Array.from(map.values()).sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
 }

@@ -23,7 +23,7 @@ export async function getMonthlyBudget(monthStr: string) {
       budget = await prisma.monthlyBudget.create({
         data: {
           month: monthStr,
-          amount: 400, // Budget par défaut initial de 400€
+          amount: 400,
         },
         include: {
           expenses: true,
@@ -63,6 +63,7 @@ export async function updateBudgetAmount(monthStr: string, newAmount: number) {
 }
 
 export async function addExpense(data: {
+  id?: string;
   monthStr: string;
   dateStr: string;
   amount: number;
@@ -79,6 +80,7 @@ export async function addExpense(data: {
 
     await prisma.expense.create({
       data: {
+        ...(data.id ? { id: data.id } : {}),
         monthlyBudgetId: budget.id,
         date: new Date(data.dateStr),
         amount: data.amount,
