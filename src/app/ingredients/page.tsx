@@ -1,7 +1,9 @@
 import { getCategories } from "../actions/ingredients";
 import Link from "next/link";
 
-// Mapping des emojis Apple par catégorie
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const categoryEmojis: Record<string, string> = {
   "Fruits":              "🍎",
   "Légumes":             "🥦",

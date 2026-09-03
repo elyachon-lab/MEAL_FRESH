@@ -5,6 +5,9 @@ import { startOfWeek } from "date-fns";
 import PlannerUI from "@/components/PlannerUI";
 import Image from "next/image";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function PlanningPage() {
   const startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
   const [recipes, plannings, categories] = await Promise.all([

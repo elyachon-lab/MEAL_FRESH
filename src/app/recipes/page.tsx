@@ -3,6 +3,9 @@ import { getCategories } from "../actions/ingredients";
 import RecipeForm from "@/components/RecipeForm";
 import RecipeCard from "@/components/RecipeCard";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function RecipesPage() {
   const [recipes, categories] = await Promise.all([getRecipes(), getCategories()]);
 
