@@ -5,6 +5,14 @@ import Link from "next/link";
 import { signOut } from "./actions/auth";
 import { getUser } from "@/lib/dal";
 
+/**
+ * Le layout lit les cookies de session à chaque requête : il ne peut jamais
+ * être pré-rendu au build. On le déclare explicitement pour que `next build`
+ * n'essaie pas de générer statiquement « / » ou « /login » (sinon le build
+ * échoue si la configuration Supabase est absente de l'environnement de build).
+ */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Meal Fresh — Mon Planificateur de Repas & Budget",
   description: "Planifiez vos repas, sauvegardez vos recettes et gérez votre budget.",

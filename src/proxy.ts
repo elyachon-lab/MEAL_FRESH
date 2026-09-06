@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase/config";
+
 /**
  * Proxy Next.js 16 (ex-« middleware »).
  *
@@ -24,17 +26,11 @@ function isPublic(pathname: string) {
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-    "";
-
   // Sans configuration, on laisse passer : les pages afficheront un message
   // d'erreur explicite plutôt qu'une boucle de redirection vers /login.
-  if (!url || !key) return response;
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return response;
 
-  const supabase = createServerClient(url, key, {
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
