@@ -31,12 +31,8 @@ export async function proxy(request: NextRequest) {
     // sans ce filet, la moindre exception ici renvoie 500 sur TOUTES les routes
     // couvertes par le matcher. On laisse passer la requête ; les pages
     // appliquent de toute façon leur propre contrôle via requireSession().
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("[proxy] échec, requête laissée passer :", message);
-    const response = NextResponse.next({ request });
-    // TODO(diagnostic) : à retirer une fois la cause identifiée en production.
-    response.headers.set("x-proxy-error", message.slice(0, 200));
-    return response;
+    console.error("[proxy] échec, requête laissée passer :", error);
+    return NextResponse.next({ request });
   }
 }
 

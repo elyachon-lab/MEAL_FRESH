@@ -19,13 +19,39 @@
 const DEFAULT_SUPABASE_URL = "https://dxaxfxzpttiadfekksrx.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_Tqq1moLuBmmNAInb_qpYpQ_ldhthZ8U";
 
-// `||` et non `??` : une variable définie mais vide doit aussi retomber sur la
-// valeur par défaut.
-export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+/** Espaces et guillemets parasites, fréquents quand la valeur est collée
+ *  dans l'interface d'un hébergeur. */
+function clean(raw: string | undefined) {
+  return (raw ?? "").trim().replace(/^["']|["']$/g, "").trim();
+}
+
+/**
+ * Une URL invalide fait lever `createServerClient`, ce qui casse le proxy ET
+ * le rendu de chaque page — donc tout le site. On préfère normaliser ce qui
+ * peut l'être (schéma absent, barre oblique finale) et ignorer le reste au
+ * profit de la valeur par défaut, plutôt que de servir des 500.
+ */
+function normalizeUrl(raw: string | undefined) {
+  const value = clean(raw);
+  if (!value) return "";
+  try {
+    const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+    // `new URL("https://nimportequoi")` réussit : on exige en plus un nom
+    // d'hôte plausible, sinon l'erreur ne surgirait qu'au premier appel réseau.
+    if (!url.hostname.includes(".") && url.hostname !== "localhost") return "";
+    return url.origin;
+  } catch {
+    return "";
+  }
+}
+
+// `||` et non `??` : une variable définie mais vide — ou inexploitable — doit
+// elle aussi retomber sur la valeur par défaut.
+export const SUPABASE_URL = normalizeUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) || DEFAULT_SUPABASE_URL;
 
 export const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  clean(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ||
+  clean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
   DEFAULT_SUPABASE_ANON_KEY;
 
 export function assertSupabaseConfig() {
