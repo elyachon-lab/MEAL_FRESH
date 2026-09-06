@@ -24,6 +24,23 @@ function isPublic(pathname: string) {
 }
 
 export async function proxy(request: NextRequest) {
+  try {
+    return await handle(request);
+  } catch (error) {
+    // Une panne du proxy ne doit jamais rendre le site entier inaccessible :
+    // sans ce filet, la moindre exception ici renvoie 500 sur TOUTES les routes
+    // couvertes par le matcher. On laisse passer la requête ; les pages
+    // appliquent de toute façon leur propre contrôle via requireSession().
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[proxy] échec, requête laissée passer :", message);
+    const response = NextResponse.next({ request });
+    // TODO(diagnostic) : à retirer une fois la cause identifiée en production.
+    response.headers.set("x-proxy-error", message.slice(0, 200));
+    return response;
+  }
+}
+
+async function handle(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   // Sans configuration, on laisse passer : les pages afficheront un message
