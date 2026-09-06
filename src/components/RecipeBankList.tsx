@@ -1,14 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { mergeRecipes } from "../lib/storage";
 import RecipeCard from "./RecipeCard";
 
 export default function RecipeBankList({ initialRecipes, categories }: { initialRecipes: any[]; categories: any[] }) {
   const [recipes, setRecipes] = useState(initialRecipes);
 
   useEffect(() => {
-    setRecipes(mergeRecipes(initialRecipes));
+    setRecipes(initialRecipes);
   }, [initialRecipes]);
 
   return (

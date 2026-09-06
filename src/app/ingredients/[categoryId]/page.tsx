@@ -1,40 +1,20 @@
-import prisma, { ensureDatabaseSchema } from "@/lib/prisma";
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
+
+import { addIngredientToCategory, getCategoryDetail } from "@/app/actions/ingredients";
 import { getRecipes } from "@/app/actions/recipes";
 import CategoryDetailView from "@/components/CategoryDetailView";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function CategoryDetailPage({ params }: { params: Promise<{ categoryId: string }> }) {
-  await ensureDatabaseSchema();
+export default async function CategoryDetailPage({
+  params,
+}: {
+  params: Promise<{ categoryId: string }>;
+}) {
   const { categoryId } = await params;
 
-  const recipes = await getRecipes();
-
-  let category = await prisma.category.findUnique({
-    where: { id: categoryId },
-    include: {
-      ingredients: {
-        orderBy: { name: "asc" }
-      }
-    }
-  });
-
-  if (!category) {
-    const allCats = await prisma.category.findMany({
-      include: {
-        ingredients: {
-          orderBy: { name: "asc" }
-        }
-      }
-    });
-
-    category = allCats.find(
-      c => c.id === categoryId || c.name.toLowerCase() === categoryId.toLowerCase()
-    ) || null;
-  }
+  const [category, recipes] = await Promise.all([getCategoryDetail(categoryId), getRecipes()]);
 
   if (!category) {
     return (
@@ -47,27 +27,14 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
     );
   }
 
-  const activeCategory = category;
-
-  // Action serveur pour ajouter un nouvel ingrédient à la catégorie
   async function addIngredientAction(formData: FormData) {
     "use server";
-    await ensureDatabaseSchema();
-    const name = (formData.get("name") as string)?.trim();
-    if (name && activeCategory) {
-      await prisma.ingredient.create({
-        data: { name, categoryId: activeCategory.id }
-      });
-      revalidatePath(`/ingredients/${activeCategory.id}`);
-      revalidatePath("/ingredients", "layout");
-      revalidatePath("/recipes");
-      revalidatePath("/planning");
-    }
+    await addIngredientToCategory(category!.id, formData);
   }
 
   return (
     <CategoryDetailView
-      initialCategory={JSON.parse(JSON.stringify(activeCategory))}
+      initialCategory={category}
       serverRecipes={recipes}
       addIngredientAction={addIngredientAction}
     />

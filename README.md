@@ -1,37 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Meal Fresh
 
-## Getting Started
+Planificateur de repas, banque de recettes et suivi de budget courses.
+Next.js 16 (App Router) + Supabase (Postgres, Auth, RLS).
 
-First, run the development server:
+## Mise en route
+
+### 1. Appliquer le schéma dans Supabase
+
+Dans le dashboard du projet → **SQL Editor**, exécuter dans l'ordre :
+
+1. `supabase/migrations/0001_init_auth_schema.sql` — tables, index, politiques RLS
+   et déclencheur d'amorçage des nouveaux comptes ;
+2. `supabase/migrations/0002_starter_recipes.sql` — les 16 recettes de démarrage.
+
+Les deux fichiers sont rejouables sans effet de bord.
+
+### 2. Renseigner les variables d'environnement
+
+Copier `.env.example` vers `.env.local` et compléter avec les valeurs de
+**Settings → API** :
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Variable | Rôle |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL du projet |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Clé publique (`anon` historique acceptée) |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Il n'y a **pas** de mot de passe de base de données à fournir : l'application
+passe uniquement par l'API Supabase, jamais par une connexion Postgres directe.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Lancer l'application
 
-## Learn More
+```bash
+pnpm install && pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Comptes et isolation des données
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+L'inscription se fait par email + mot de passe sur `/login`. À la création d'un
+compte, un déclencheur Postgres copie les recettes de démarrage dans l'espace du
+nouvel utilisateur.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Chaque table métier porte un `user_id` et une politique **Row Level Security** :
+l'isolation est appliquée par la base, pas seulement par le code. Une requête
+mal écrite — ou un appel direct à l'API avec la clé publique — ne peut pas
+atteindre les données d'un autre compte.
 
-## Deploy on Vercel
+Les catégories d'ingrédients sont un référentiel partagé, en lecture seule.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Confirmation par email
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# MEAL_FRESH
+Par défaut, Supabase exige une confirmation d'adresse. Le lien reçu arrive sur
+`/auth/confirm`, qui gère les deux formats (`token_hash` et `code`).
+
+Pour un usage personnel, la confirmation peut être désactivée dans
+**Authentication → Providers → Email** ; l'application ouvre alors la session
+directement après l'inscription.
+
+## Architecture
+
+| Chemin | Rôle |
+| --- | --- |
+| `src/proxy.ts` | Rafraîchit la session à chaque requête et redirige les visiteurs non connectés. Remplace l'ancienne convention `middleware`, dépréciée en Next.js 16. |
+| `src/lib/dal.ts` | Couche d'accès aux données : session et client Supabase, mémorisés par rendu. |
+| `src/lib/supabase/` | Création du client serveur et configuration. |
+| `src/lib/mappers.ts` | Projection des lignes Postgres (`snake_case`) vers les objets de l'interface. |
+| `src/app/actions/` | Server Actions : recettes, ingrédients, planning, budget, authentification. |
+| `supabase/migrations/` | Schéma et données de référence. |
+
+Les dates de planning sont stockées en type `date` (jour calendaire, sans
+fuseau), ce qui supprime les décalages d'un jour observés auparavant. Une
+contrainte d'unicité `(user_id, date, meal_time, recipe_id)` empêche en base la
+double insertion d'une même carte.

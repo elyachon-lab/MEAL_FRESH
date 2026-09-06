@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createRecipeWithIngredients } from "../app/actions/recipes";
-import { saveLocalRecipe } from "../lib/storage";
 import { getIngredientEmoji } from "../lib/emojis";
 
 type Category = { id: string; name: string };
@@ -65,16 +64,6 @@ export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
           finalIngredients.push({ name: ingName.trim(), categoryId: catId, quantity: ingQty });
         }
 
-        // 1. Sauvegarder dans le localStorage du navigateur pour garantir la persistance permanente
-        saveLocalRecipe({
-          title,
-          urlSource,
-          instructions,
-          ingredients: finalIngredients,
-          categories,
-        });
-
-        // 2. Envoyer au serveur
         const res = await createRecipeWithIngredients({
           title,
           urlSource,

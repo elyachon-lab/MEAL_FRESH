@@ -1,86 +1,103 @@
 "use server";
 
-import prisma, { ensureDatabaseSchema } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { addDays } from "date-fns";
 
-function toPlainObject<T>(data: T): T {
-  return JSON.parse(JSON.stringify(data));
-}
+import { requireSession } from "@/lib/dal";
+import { RECIPE_SELECT, mapPlanning, mapRecipe, toDateKey } from "@/lib/mappers";
 
-export async function getWeeklyPlanning(startDate: Date) {
+export type MealTime = "Matin" | "Midi" | "Goûter" | "Soir";
+
+const PLANNING_SELECT = `id, date, meal_time, recipe:recipes ( ${RECIPE_SELECT} )`;
+
+/** Plannings des 7 jours à partir de startDate (bornes incluses). */
+export async function getWeeklyPlanning(startDate: string | Date) {
   try {
-    await ensureDatabaseSchema();
-    const end = addDays(startDate, 6);
-    
-    const plannings = await prisma.planning.findMany({
-      where: {
-        date: {
-          gte: startDate,
-          lte: end,
-        },
-      },
-      include: {
-        recipe: true,
-      }
-    });
+    const { supabase } = await requireSession();
 
-    return toPlainObject(plannings);
+    const start = toDateKey(startDate);
+    const end = toDateKey(addDays(new Date(`${start}T12:00:00`), 6));
+
+    const { data, error } = await supabase
+      .from("plannings")
+      .select(PLANNING_SELECT)
+      .gte("date", start)
+      .lte("date", end)
+      .order("date");
+
+    if (error) throw new Error(error.message);
+
+    // Les lignes sans recette (cas théorique) sont écartées avant projection,
+    // ce qui garantit un `recipe` non nul aux composants.
+    return (data ?? [])
+      .filter((row: any) => row.recipe)
+      .map((row: any) => ({
+        id: row.id,
+        date: row.date,
+        mealTime: row.meal_time,
+        recipe: mapRecipe(row.recipe),
+      }));
   } catch (err: any) {
-    console.error("Error in getWeeklyPlanning:", err);
+    console.error("getWeeklyPlanning:", err?.message ?? err);
     return [];
   }
 }
 
 export async function assignMeal(
-  recipeId: string, 
-  dateInput: string | Date, 
-  mealTime: "Matin" | "Midi" | "Goûter" | "Soir", 
+  recipeId: string,
+  dateInput: string | Date,
+  mealTime: MealTime,
   existingPlanningId?: string,
-  customId?: string
 ) {
   try {
-    await ensureDatabaseSchema();
-    const rawDate = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
-    // Normaliser à 12:00:00 pour annuler tout décalage de fuseau horaire UTC/Local
-    const date = new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate(), 12, 0, 0);
+    const { supabase, user } = await requireSession();
+    const date = toDateKey(dateInput);
 
     if (existingPlanningId) {
-      await prisma.planning.update({
-        where: { id: existingPlanningId },
-        data: { date, mealTime, recipeId },
-      });
-    } else {
-      await prisma.planning.create({
-        data: {
-          ...(customId ? { id: customId } : {}),
-          recipeId,
-          date,
-          mealTime,
-        },
-      });
+      const { data, error } = await supabase
+        .from("plannings")
+        .update({ date, meal_time: mealTime, recipe_id: recipeId })
+        .eq("id", existingPlanningId)
+        .select(PLANNING_SELECT)
+        .maybeSingle();
+
+      if (error) throw new Error(error.message);
+
+      revalidatePath("/");
+      revalidatePath("/planning");
+      return { success: true as const, planning: data ? mapPlanning(data) : null };
     }
-    
+
+    const { data, error } = await supabase
+      .from("plannings")
+      .insert({ user_id: user.id, date, meal_time: mealTime, recipe_id: recipeId })
+      .select(PLANNING_SELECT)
+      .maybeSingle();
+
+    // 23505 : la contrainte d'unicité a bloqué un second dépôt de la même
+    // carte sur le même créneau — le repas est déjà planifié, rien à faire.
+    if (error && error.code !== "23505") throw new Error(error.message);
+
     revalidatePath("/");
     revalidatePath("/planning");
-    return { success: true };
+    return { success: true as const, planning: data ? mapPlanning(data) : null };
   } catch (err: any) {
-    console.error("Error in assignMeal:", err);
-    return { success: false, error: err?.message || "Erreur lors de l'assignation du repas." };
+    console.error("assignMeal:", err?.message ?? err);
+    return { success: false as const, error: err?.message || "Erreur lors de l'assignation du repas." };
   }
 }
 
 export async function removeMeal(planningId: string) {
   try {
-    await ensureDatabaseSchema();
-    await prisma.planning.delete({
-      where: { id: planningId }
-    });
+    const { supabase } = await requireSession();
+    const { error } = await supabase.from("plannings").delete().eq("id", planningId);
+    if (error) throw new Error(error.message);
+
     revalidatePath("/");
     revalidatePath("/planning");
-    return { success: true };
+    return { success: true as const };
   } catch (err: any) {
-    console.error("Error in removeMeal:", err);
-    return { success: false, error: err?.message || "Erreur lors de la suppression." };
+    console.error("removeMeal:", err?.message ?? err);
+    return { success: false as const, error: err?.message || "Erreur lors de la suppression." };
   }
 }

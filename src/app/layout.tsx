@@ -2,12 +2,17 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Link from "next/link";
 
+import { signOut } from "./actions/auth";
+import { getUser } from "@/lib/dal";
+
 export const metadata: Metadata = {
   title: "Meal Fresh — Mon Planificateur de Repas & Budget",
   description: "Planifiez vos repas, sauvegardez vos recettes et gérez votre budget.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = await getUser();
+
   return (
     <html lang="fr">
       <head>
@@ -19,6 +24,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        {!user ? (
+          children
+        ) : (
+        <>
         {/* ── Top Navbar (sans logo) ── */}
         <header className="top-navbar">
           <nav className="navbar-nav">
@@ -29,9 +38,32 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/budget" className="nav-link">💰 Budget</Link>
           </nav>
 
-          <Link href="/recipes" className="btn btn-primary btn-sm btn-header-action">
-            + Nouvelle recette
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <span
+              className="navbar-user-email"
+              title={user.email ?? undefined}
+              style={{
+                fontSize: "0.8rem",
+                color: "var(--text-secondary)",
+                maxWidth: "180px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {user.email}
+            </span>
+
+            <Link href="/recipes" className="btn btn-primary btn-sm btn-header-action">
+              + Nouvelle recette
+            </Link>
+
+            <form action={signOut}>
+              <button type="submit" className="btn btn-outline btn-sm" title="Se déconnecter">
+                Déconnexion
+              </button>
+            </form>
+          </div>
         </header>
 
         {/* ── Content ── */}
@@ -58,6 +90,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <span className="bottom-nav-label">Budget</span>
           </Link>
         </nav>
+        </>
+        )}
       </body>
     </html>
   );

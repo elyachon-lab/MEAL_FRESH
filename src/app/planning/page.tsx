@@ -1,14 +1,14 @@
 import { getRecipes } from "../actions/recipes";
 import { getWeeklyPlanning } from "../actions/planning";
 import { getCategories } from "../actions/ingredients";
-import { startOfWeek } from "date-fns";
+import { format, startOfWeek } from "date-fns";
 import PlannerUI from "@/components/PlannerUI";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function PlanningPage() {
-  const startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const startDate = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
   const [recipes, plannings, categories] = await Promise.all([
     getRecipes(),
     getWeeklyPlanning(startDate),

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { getLocalRecipes, mergeRecipes } from "../lib/storage";
 import { getIngredientEmoji, inferCategoryName } from "../lib/emojis";
 
 type Category = {
@@ -36,7 +35,7 @@ export default function CategoryDetailView({
 
   const refreshCategoryData = useCallback(() => {
     // 1. Récupérer toutes les recettes (BDD + local)
-    const recipes = mergeRecipes(serverRecipes);
+    const recipes = serverRecipes;
     const targetCatNorm = normalizeStr(initialCategory.name);
     const targetCatId = initialCategory.id;
 
@@ -119,15 +118,6 @@ export default function CategoryDetailView({
 
   useEffect(() => {
     refreshCategoryData();
-
-    const handleUpdate = () => refreshCategoryData();
-    window.addEventListener("mealfresh_recipes_updated", handleUpdate);
-    window.addEventListener("storage", handleUpdate);
-
-    return () => {
-      window.removeEventListener("mealfresh_recipes_updated", handleUpdate);
-      window.removeEventListener("storage", handleUpdate);
-    };
   }, [refreshCategoryData]);
 
   // Filtrer les recettes si une bulle d'ingrédient spécifique est sélectionnée

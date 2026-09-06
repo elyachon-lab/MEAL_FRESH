@@ -1,149 +1,71 @@
 "use server";
 
-import prisma, { ensureDatabaseSchema } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { inferCategoryName } from "@/lib/emojis";
 
-const DEFAULT_CATEGORIES = [
-  "Protéines",
-  "Glucides",
-  "Légumes",
-  "Fruits",
-  "Produits Laitiers",
-  "Sucré",
-  "Matières Grasses",
-  "Épices & Condiments"
-];
+import { requireSession } from "@/lib/dal";
+import { findOrCreateIngredient, isUuid, listCategories } from "@/lib/ingredients";
 
-function toPlainObject<T>(data: T): T {
-  return JSON.parse(JSON.stringify(data));
-}
-
+/** Catégories du référentiel, avec le nombre d'ingrédients du compte courant. */
 export async function getCategories() {
-  try {
-    await ensureDatabaseSchema();
-    let categories = await prisma.category.findMany({
-      orderBy: { name: "asc" },
-      include: {
-        _count: {
-          select: { ingredients: true }
-        }
-      }
-    });
+  const { supabase } = await requireSession();
 
-    // Si aucune catégorie n'existe encore ou si la catégorie "Sucré" manque, on l'ajoute automatiquement
-    for (const name of DEFAULT_CATEGORIES) {
-      await prisma.category.upsert({
-        where: { name },
-        update: {},
-        create: { name },
-      });
-    }
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id, name, ingredients(count)")
+    .order("name");
 
-    categories = await prisma.category.findMany({
-      orderBy: { name: "asc" },
-      include: {
-        _count: {
-          select: { ingredients: true }
-        }
-      }
-    });
-
-    return toPlainObject(categories);
-  } catch (err) {
-    console.error("Error in getCategories:", err);
+  if (error) {
+    console.error("getCategories:", error.message);
     return [];
   }
+
+  return (data ?? []).map((category: any) => ({
+    id: category.id,
+    name: category.name,
+    _count: { ingredients: category.ingredients?.[0]?.count ?? 0 },
+  }));
 }
 
-export async function getIngredients() {
-  try {
-    await ensureDatabaseSchema();
-    const ingredients = await prisma.ingredient.findMany({
-      include: { category: true },
-      orderBy: { name: "asc" }
-    });
-    return toPlainObject(ingredients);
-  } catch (err) {
-    console.error("Error in getIngredients:", err);
-    return [];
+/** Une catégorie et les ingrédients que l'utilisateur y a rangés. */
+export async function getCategoryDetail(categoryIdOrName: string) {
+  const { supabase } = await requireSession();
+
+  const query = supabase.from("categories").select("id, name, ingredients ( id, name )");
+
+  const { data, error } = isUuid(categoryIdOrName)
+    ? await query.eq("id", categoryIdOrName).maybeSingle()
+    : await query.ilike("name", categoryIdOrName).limit(1).maybeSingle();
+
+  if (error) {
+    console.error("getCategoryDetail:", error.message);
+    return null;
   }
-}
+  if (!data) return null;
 
-/**
- * Trouve ou crée un ingrédient par son nom en garantissant une catégorie valide en BDD.
- */
-export async function findOrCreateIngredient(name: string, categoryIdOrName?: string): Promise<string> {
-  await ensureDatabaseSchema();
-  const trimmed = name.trim();
-  const validCats = await getCategories();
-  
-  // 1. Chercher si l'ingrédient existe déjà par son nom (insensible à la casse)
-  const allIngredients = await prisma.ingredient.findMany();
-  const existing = allIngredients.find(
-    i => i.name.toLowerCase() === trimmed.toLowerCase()
+  const ingredients = [...((data as any).ingredients ?? [])].sort((a: any, b: any) =>
+    a.name.localeCompare(b.name, "fr"),
   );
-  if (existing) return existing.id;
 
-  // 2. Chercher la catégorie appropriée (par ID direct ou par Nom de catégorie)
-  let targetCatId: string | undefined;
+  return { id: (data as any).id, name: (data as any).name, ingredients };
+}
 
-  if (categoryIdOrName) {
-    const foundById = validCats.find((c: any) => c.id === categoryIdOrName);
-    if (foundById) {
-      targetCatId = foundById.id;
-    } else {
-      const foundByName = validCats.find((c: any) => c.name.toLowerCase() === categoryIdOrName.toLowerCase());
-      if (foundByName) {
-        targetCatId = foundByName.id;
-      }
-    }
+/** Ajoute un ingrédient à une catégorie depuis la page de détail. */
+export async function addIngredientToCategory(categoryId: string, formData: FormData) {
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+
+  const { supabase, user } = await requireSession();
+
+  try {
+    const categories = await listCategories(supabase);
+    await findOrCreateIngredient(supabase, user.id, name, categoryId, categories);
+  } catch (err: any) {
+    console.error("addIngredientToCategory:", err?.message ?? err);
+    return;
   }
 
-  // 3. Si la catégorie n'est pas encore trouvée, inférer automatiquement à partir du nom de l'ingrédient (ex: Riz -> Glucides, Chocolat -> Sucré)
-  if (!targetCatId) {
-    const inferredName = inferCategoryName(trimmed);
-    const foundInferred = validCats.find((c: any) => c.name.toLowerCase() === inferredName.toLowerCase());
-    if (foundInferred) {
-      targetCatId = foundInferred.id;
-    } else {
-      targetCatId = validCats[0]?.id;
-    }
-  }
-
-  // 4. Si toujours pas de catégorie disponible, secours sur "Autre"
-  if (!targetCatId) {
-    const fallbackCat = await prisma.category.upsert({
-      where: { name: "Autre" },
-      update: {},
-      create: { name: "Autre" },
-    });
-    targetCatId = fallbackCat.id;
-  }
-
-  // 5. Créer l'ingrédient avec sa vraie catégorie associée
-  const created = await prisma.ingredient.create({
-    data: { name: trimmed, categoryId: targetCatId }
-  });
-
+  revalidatePath(`/ingredients/${categoryId}`);
   revalidatePath("/ingredients", "layout");
   revalidatePath("/recipes");
-  return created.id;
-}
-
-export async function createIngredient(name: string, categoryId: string) {
-  try {
-    await ensureDatabaseSchema();
-    const ingId = await findOrCreateIngredient(name, categoryId);
-    const ingredient = await prisma.ingredient.findUnique({
-      where: { id: ingId },
-      include: { category: true }
-    });
-    revalidatePath("/ingredients", "layout");
-    revalidatePath("/recipes");
-    return { success: true, ingredient: toPlainObject(ingredient) };
-  } catch (err: any) {
-    console.error("Error in createIngredient:", err);
-    return { success: false, error: err?.message || "Erreur lors de la création de l'ingrédient." };
-  }
+  revalidatePath("/planning");
 }

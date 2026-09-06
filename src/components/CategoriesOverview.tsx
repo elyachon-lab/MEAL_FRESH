@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { getLocalRecipes } from "../lib/storage";
 import { getIngredientEmoji } from "../lib/emojis";
 
 const categoryEmojis: Record<string, string> = {
@@ -27,15 +26,19 @@ type IngredientItem = {
   recipes: any[];
 };
 
-export default function CategoriesOverview({ initialCategories }: { initialCategories: any[] }) {
+export default function CategoriesOverview({
+  initialCategories,
+  serverRecipes = [],
+}: {
+  initialCategories: any[];
+  serverRecipes?: any[];
+}) {
   const [categories, setCategories] = useState(initialCategories);
   const [ingredientList, setIngredientList] = useState<IngredientItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIngName, setSelectedIngName] = useState<string | null>(null);
 
   const refreshData = useCallback(() => {
-    const localRecipes = getLocalRecipes();
-    
     // 1. Décompte par catégorie
     const catMap = new Map<string, Set<string>>();
     initialCategories.forEach(cat => {
@@ -45,8 +48,8 @@ export default function CategoriesOverview({ initialCategories }: { initialCateg
     // 2. Map d'ingrédients globale (Nom -> Recipes)
     const ingMap = new Map<string, IngredientItem>();
 
-    localRecipes.forEach(rec => {
-      (rec.ingredients || []).forEach(ingLine => {
+    serverRecipes.forEach((rec: any) => {
+      (rec.ingredients || []).forEach((ingLine: any) => {
         const ingName = ingLine.ingredient?.name || ingLine.name;
         if (!ingName) return;
 
@@ -93,19 +96,10 @@ export default function CategoriesOverview({ initialCategories }: { initialCateg
 
     setCategories(updatedCategories);
     setIngredientList(Array.from(ingMap.values()).sort((a, b) => b.recipes.length - a.recipes.length));
-  }, [initialCategories]);
+  }, [initialCategories, serverRecipes]);
 
   useEffect(() => {
     refreshData();
-
-    const handleUpdate = () => refreshData();
-    window.addEventListener("mealfresh_recipes_updated", handleUpdate);
-    window.addEventListener("storage", handleUpdate);
-
-    return () => {
-      window.removeEventListener("mealfresh_recipes_updated", handleUpdate);
-      window.removeEventListener("storage", handleUpdate);
-    };
   }, [refreshData]);
 
   // Filtrer les bulles d'ingrédients selon la recherche textuelle

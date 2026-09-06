@@ -3,14 +3,12 @@
 import React, { useState, useEffect, useTransition, useMemo } from "react";
 import { format, parseISO, addMonths, subMonths } from "date-fns";
 import { fr } from "date-fns/locale";
-import { updateBudgetAmount, addExpense, deleteExpense } from "../app/actions/budget";
 import {
-  mergeExpenses,
-  saveLocalExpense,
-  removeLocalExpense,
-  getLocalBudgetAmount,
-  saveLocalBudgetAmount
-} from "../lib/storage";
+  getMonthlyBudget,
+  updateBudgetAmount,
+  addExpense,
+  deleteExpense,
+} from "../app/actions/budget";
 
 type ExpenseItem = {
   id: string;
@@ -18,7 +16,6 @@ type ExpenseItem = {
   amount: number;
   category: string;
   description: string | null;
-  monthStr?: string;
 };
 
 type MonthlyBudgetType = {
@@ -49,14 +46,12 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   const currentMonthStr = format(currentMonthDate, "yyyy-MM");
 
   // Budget global du mois
-  const [budgetAmount, setBudgetAmount] = useState<number>(
-    getLocalBudgetAmount(currentMonthStr, initialBudget.amount)
-  );
+  const [budgetAmount, setBudgetAmount] = useState<number>(initialBudget.amount);
 
-  // Liste des dépenses cumulées du mois (Persistées sans doublons)
-  const [expenses, setExpenses] = useState<ExpenseItem[]>(
-    mergeExpenses(initialBudget.expenses, currentMonthStr)
-  );
+  // Dépenses du mois affiché, chargées depuis la base.
+  const [expenses, setExpenses] = useState<ExpenseItem[]>(initialBudget.expenses);
+  const [isLoadingMonth, setIsLoadingMonth] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [isEditingBudget, setIsEditingBudget] = useState(false);
   const [budgetAmountInput, setBudgetAmountInput] = useState(budgetAmount.toString());
@@ -69,11 +64,40 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   const [expenseCategory, setExpenseCategory] = useState("Supermarché");
   const [expenseDescription, setExpenseDescription] = useState("");
 
-  // Recharger lors des changements de mois ou de données
+  // Recharger lors des changements de mois : chaque mois est lu en base, ce
+  // qui rend l'historique consultable depuis n'importe quel appareil.
   useEffect(() => {
-    setBudgetAmount(getLocalBudgetAmount(currentMonthStr, initialBudget.amount));
-    setExpenses(mergeExpenses(initialBudget.expenses, currentMonthStr));
+    if (currentMonthStr === initialBudget.month) {
+      setBudgetAmount(initialBudget.amount);
+      setExpenses(initialBudget.expenses);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingMonth(true);
+
+    getMonthlyBudget(currentMonthStr)
+      .then((data) => {
+        if (cancelled) return;
+        setBudgetAmount(data.amount);
+        setExpenses(data.expenses);
+      })
+      .catch(() => {
+        if (!cancelled) setErrorMsg("Impossible de charger ce mois.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingMonth(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentMonthStr, initialBudget]);
+
+  // Garder le champ d'édition aligné sur le budget affiché.
+  useEffect(() => {
+    setBudgetAmountInput(budgetAmount.toString());
+  }, [budgetAmount]);
 
   // CALCULS FINANCIERS CUMULÉS DU MOIS
   const totalSpent = useMemo(() => {
@@ -125,12 +149,17 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     e.preventDefault();
     const val = parseFloat(budgetAmountInput);
     if (!isNaN(val) && val >= 0) {
+      const previous = budgetAmount;
       setBudgetAmount(val);
-      saveLocalBudgetAmount(currentMonthStr, val);
       setIsEditingBudget(false);
+      setErrorMsg(null);
 
       startTransition(async () => {
-        await updateBudgetAmount(currentMonthStr, val);
+        const res = await updateBudgetAmount(currentMonthStr, val);
+        if (!res.success) {
+          setBudgetAmount(previous);
+          setErrorMsg(res.error ?? "Le budget n'a pas pu être enregistré.");
+        }
       });
     }
   };
@@ -143,52 +172,73 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     const amt = parseFloat(expenseAmount);
     if (isNaN(amt) || amt <= 0) return;
 
-    // Identifiant unique partagé client + serveur
-    const expenseId = "exp_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+    // Ligne provisoire affichée le temps de l'aller-retour serveur ;
+    // l'identifiant définitif est celui généré par la base.
+    const tempId = `temp_${Date.now()}`;
+    const description = expenseDescription;
 
-    const newExpenseObj = {
-      id: expenseId,
-      date: expenseDate,
-      amount: amt,
-      category: expenseCategory,
-      description: expenseDescription || null,
-      monthStr: currentMonthStr,
-    };
-
-    // 1. Sauvegarde locale unique
-    saveLocalExpense(newExpenseObj);
-    setExpenses(prev => [newExpenseObj, ...prev.filter(e => e.id !== expenseId)]);
+    setExpenses(prev => [
+      { id: tempId, date: expenseDate, amount: amt, category: expenseCategory, description: description || null },
+      ...prev,
+    ]);
 
     setExpenseAmount("");
     setExpenseDescription("");
+    setErrorMsg(null);
 
-    // 2. Synchronisation serveur avec l'ID identique
     startTransition(async () => {
-      await addExpense({
-        id: expenseId,
+      const res = await addExpense({
         monthStr: currentMonthStr,
         dateStr: expenseDate,
         amount: amt,
         category: expenseCategory,
-        description: expenseDescription,
+        description,
       });
+
+      if (res.success && res.expense) {
+        setExpenses(prev => [res.expense, ...prev.filter(e => e.id !== tempId)]);
+      } else {
+        setExpenses(prev => prev.filter(e => e.id !== tempId));
+        setErrorMsg(res.error ?? "La dépense n'a pas pu être enregistrée.");
+      }
     });
   };
 
   // SUPPRESSION D'UNE DÉPENSE
   const handleDeleteExpense = (id: string) => {
-    removeLocalExpense(id);
+    const previous = expenses;
     setExpenses(prev => prev.filter(e => e.id !== id));
+    setErrorMsg(null);
 
     startTransition(async () => {
-      await deleteExpense(id);
+      const res = await deleteExpense(id);
+      if (!res.success) {
+        setExpenses(previous);
+        setErrorMsg(res.error ?? "La dépense n'a pas pu être supprimée.");
+      }
     });
   };
 
   const monthTitle = format(currentMonthDate, "MMMM yyyy", { locale: fr });
 
   return (
-    <div className="budget-dashboard" style={{ opacity: isPending ? 0.9 : 1 }}>
+    <div className="budget-dashboard" style={{ opacity: isPending || isLoadingMonth ? 0.9 : 1 }}>
+
+      {errorMsg && (
+        <div
+          role="alert"
+          style={{
+            padding: "0.75rem 1rem",
+            marginBottom: "1rem",
+            borderRadius: "var(--radius-md)",
+            background: "#fee2e2",
+            color: "#b91c1c",
+            fontSize: "0.875rem",
+          }}
+        >
+          {errorMsg}
+        </div>
+      )}
       
       {/* ── En-tête du Budget & Navigation par Mois ── */}
       <div className="budget-header-card card" style={{ padding: "1.5rem" }}>

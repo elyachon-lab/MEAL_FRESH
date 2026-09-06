@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { format, startOfWeek, addDays, addWeeks } from "date-fns";
 import { fr } from "date-fns/locale";
-import { assignMeal, removeMeal } from "../app/actions/planning";
+import { assignMeal, getWeeklyPlanning, removeMeal } from "../app/actions/planning";
 import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
-import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe, mergePlannings, saveLocalPlanning, removeLocalPlanning } from "../lib/storage";
 import { inferCategoryName, getIngredientEmoji } from "../lib/emojis";
 import RecipeForm from "./RecipeForm";
 
@@ -54,6 +53,12 @@ const CATEGORY_EMOJIS: Record<string, string> = {
 };
 
 function getFormattedDateKey(d: Date | string): string {
+  // Une date déjà au format yyyy-MM-dd est renvoyée telle quelle : la
+  // reconvertir via new Date() la ferait basculer d'un jour selon le fuseau.
+  if (typeof d === "string") {
+    const match = d.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
   const dateObj = typeof d === "string" ? new Date(d) : d;
   const year = dateObj.getFullYear();
   const month = String(dateObj.getMonth() + 1).padStart(2, "0");
@@ -113,11 +118,38 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const startDate = addWeeks(baseStartDate, weekOffset);
   const endDate = addDays(startDate, 6);
 
+  const weekStartKey = getFormattedDateKey(startDate);
+
   useEffect(() => {
     setIsReady(true);
-    setAllRecipes(mergeRecipes(recipes));
-    setLocalPlannings(mergePlannings(plannings));
-  }, [recipes, plannings]);
+    setAllRecipes(recipes);
+  }, [recipes]);
+
+  // La semaine en cours arrive déjà rendue par le serveur ; les autres
+  // semaines sont chargées à la demande depuis la base.
+  useEffect(() => {
+    if (weekOffset === 0) {
+      setLocalPlannings(plannings);
+      return;
+    }
+
+    let cancelled = false;
+    getWeeklyPlanning(weekStartKey).then((rows) => {
+      if (!cancelled) setLocalPlannings(rows as PlannedMeal[]);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [weekOffset, weekStartKey, plannings]);
+
+  /** Resynchronise l'affichage sur l'état réel de la base après une écriture. */
+  const syncAfterMutation = useCallback(() => {
+    router.refresh();
+    if (weekOffset !== 0) {
+      getWeeklyPlanning(weekStartKey).then((rows) => setLocalPlannings(rows as PlannedMeal[]));
+    }
+  }, [router, weekOffset, weekStartKey]);
 
   // Recettes filtrées et triées par catégorie pour la banque de gauche
   const filteredRecipes = useMemo(() => {
@@ -211,14 +243,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const handleSaveEditRecipe = () => {
     if (!editingRecipe || !editTitle.trim()) return;
 
-    saveLocalRecipe({
-      id: editingRecipe.id,
-      title: editTitle.trim(),
-      urlSource: editUrl.trim(),
-      instructions: editInstructions.trim(),
-      ingredients: editIngredients,
-    });
-
     startTransition(async () => {
       await updateRecipeWithIngredients({
         id: editingRecipe.id,
@@ -228,18 +252,15 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         ingredients: editIngredients,
       });
       setEditingRecipe(null);
-      setAllRecipes(mergeRecipes(recipes));
       router.refresh();
     });
   };
 
   const handleDeleteBankRecipe = (id: string) => {
-    deleteLocalRecipe(id);
     startTransition(async () => {
       await deleteRecipe(id);
       if (editingRecipe?.id === id) setEditingRecipe(null);
-      setAllRecipes(mergeRecipes(recipes));
-      router.refresh();
+      syncAfterMutation();
     });
   };
 
@@ -256,8 +277,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     if (destination.droppableId !== "recipe-bank") {
       const [dayStr, mealTime] = destination.droppableId.split("-");
       const dayOffset = parseInt(dayStr, 10);
-      const targetDate = addDays(startDate, dayOffset);
-      targetDate.setHours(12, 0, 0, 0); // Normaliser à 12:00:00
+      const dateKey = getFormattedDateKey(addDays(startDate, dayOffset));
 
       const recipeToAssign = isFromBank
         ? allRecipes.find(r => r.id === recipeId)
@@ -265,55 +285,61 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
       if (!recipeToAssign) return;
 
-      const tempId = "plan_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+      // Carte provisoire, remplacée par la ligne renvoyée par la base.
+      const tempId = `temp_${Date.now()}`;
       const newMeal: PlannedMeal = {
         id: tempId,
         recipe: recipeToAssign,
-        date: targetDate,
+        date: dateKey,
         mealTime,
       };
 
-      saveLocalPlanning(newMeal);
-
-      if (!isFromBank && rawPlanningId) {
-        removeLocalPlanning(rawPlanningId);
-        setLocalPlannings(prev => [...prev.filter(p => p.id !== rawPlanningId), newMeal]);
-      } else {
-        setLocalPlannings(prev => [...prev.filter(p => p.id !== tempId), newMeal]);
-      }
+      setLocalPlannings(prev => [
+        ...prev.filter(p => p.id !== rawPlanningId && p.id !== tempId),
+        newMeal,
+      ]);
 
       startTransition(async () => {
-        if (isFromBank && recipeId) {
-          await assignMeal(recipeId, targetDate.toISOString(), mealTime as MealKey, undefined, tempId);
-        } else if (rawPlanningId) {
-          await assignMeal(recipeToAssign.id, targetDate.toISOString(), mealTime as MealKey, rawPlanningId, tempId);
+        const res =
+          isFromBank && recipeId
+            ? await assignMeal(recipeId, dateKey, mealTime as MealKey)
+            : rawPlanningId
+              ? await assignMeal(recipeToAssign.id, dateKey, mealTime as MealKey, rawPlanningId)
+              : null;
+
+        if (res?.success && res.planning) {
+          const saved = res.planning as PlannedMeal;
+          setLocalPlannings(prev => [
+            ...prev.filter(p => p.id !== tempId && p.id !== rawPlanningId && p.id !== saved.id),
+            saved,
+          ]);
+          router.refresh();
+        } else {
+          // Doublon refusé par la base, ou échec : l'état serveur fait foi.
+          syncAfterMutation();
         }
-        router.refresh();
       });
     } else {
       if (!isFromBank && rawPlanningId) {
-        removeLocalPlanning(rawPlanningId);
         setLocalPlannings(prev => prev.filter(p => p.id !== rawPlanningId));
-        
+
         startTransition(async () => {
           await removeMeal(rawPlanningId);
-          router.refresh();
+          syncAfterMutation();
         });
       }
     }
   };
 
   const handleSelectMeal = (dayIndex: number, mealTime: MealKey, recipeId: string, currentPlanningId?: string) => {
-    const targetDate = addDays(startDate, dayIndex);
-    targetDate.setHours(12, 0, 0, 0);
-    
+    const dateKey = getFormattedDateKey(addDays(startDate, dayIndex));
+
     if (!recipeId) {
       if (currentPlanningId) {
-        removeLocalPlanning(currentPlanningId);
         setLocalPlannings(prev => prev.filter(p => p.id !== currentPlanningId));
         startTransition(async () => {
           await removeMeal(currentPlanningId);
-          router.refresh();
+          syncAfterMutation();
         });
       }
       return;
@@ -322,24 +348,35 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     const recipe = allRecipes.find(r => r.id === recipeId);
     if (!recipe) return;
 
-    const tempId = currentPlanningId || "plan_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
-    const newMeal: PlannedMeal = { id: tempId, recipe, date: targetDate, mealTime };
+    const tempId = `temp_${Date.now()}`;
+    const newMeal: PlannedMeal = { id: tempId, recipe, date: dateKey, mealTime };
 
-    saveLocalPlanning(newMeal);
-    setLocalPlannings(prev => [...prev.filter(p => p.id !== currentPlanningId && p.id !== tempId), newMeal]);
+    setLocalPlannings(prev => [
+      ...prev.filter(p => p.id !== currentPlanningId && p.id !== tempId),
+      newMeal,
+    ]);
 
     startTransition(async () => {
-      await assignMeal(recipeId, targetDate.toISOString(), mealTime, currentPlanningId, tempId);
-      router.refresh();
+      const res = await assignMeal(recipeId, dateKey, mealTime, currentPlanningId);
+
+      if (res.success && res.planning) {
+        const saved = res.planning as PlannedMeal;
+        setLocalPlannings(prev => [
+          ...prev.filter(p => p.id !== tempId && p.id !== currentPlanningId && p.id !== saved.id),
+          saved,
+        ]);
+        router.refresh();
+      } else {
+        syncAfterMutation();
+      }
     });
   };
 
   const handleRemoveMeal = (planningId: string) => {
-    removeLocalPlanning(planningId);
     setLocalPlannings(prev => prev.filter(p => p.id !== planningId));
     startTransition(async () => {
       await removeMeal(planningId);
-      router.refresh();
+      syncAfterMutation();
     });
   };
 
@@ -420,7 +457,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           {showFormModal && (
             <div style={{ background: "var(--bg)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", border: "1.5px solid var(--primary)" }}>
               <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>➕ Nouvelle Recette</h3>
-              <RecipeForm categories={categories} onSuccess={() => { setShowFormModal(false); setAllRecipes(mergeRecipes(recipes)); router.refresh(); }} />
+              <RecipeForm categories={categories} onSuccess={() => { setShowFormModal(false); router.refresh(); }} />
             </div>
           )}
 

@@ -2,10 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { startOfWeek, addDays } from "date-fns";
+import { format, startOfWeek, addDays } from "date-fns";
 import { deleteRecipe, updateRecipeWithIngredients } from "../app/actions/recipes";
 import { assignMeal } from "../app/actions/planning";
-import { deleteLocalRecipe, saveLocalRecipe } from "../lib/storage";
 import { getIngredientEmoji } from "../lib/emojis";
 
 type Category = { id: string; name: string };
@@ -74,15 +73,6 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   };
 
   const handleSave = () => {
-    saveLocalRecipe({
-      id: recipe.id,
-      title,
-      urlSource,
-      instructions,
-      ingredients,
-      categories,
-    });
-
     startTransition(async () => {
       await updateRecipeWithIngredients({ id: recipe.id, title, urlSource, instructions, ingredients });
       setEditing(false);
@@ -91,7 +81,6 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   };
 
   const handleDelete = () => {
-    deleteLocalRecipe(recipe.id);
     startTransition(async () => {
       await deleteRecipe(recipe.id);
       router.refresh();
@@ -103,7 +92,7 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
     const targetDate = addDays(startDate, selectedDay);
 
     startTransition(async () => {
-      await assignMeal(recipe.id, targetDate.toISOString(), selectedMeal);
+      await assignMeal(recipe.id, format(targetDate, "yyyy-MM-dd"), selectedMeal);
       setPlanSuccessMsg(`✅ Ajouté à ${DAYS[selectedDay]} (${selectedMeal}) !`);
       setTimeout(() => {
         setShowPlanMenu(false);
