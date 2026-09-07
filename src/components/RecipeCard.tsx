@@ -21,6 +21,7 @@ type Recipe = {
   imageUrl?: string | null;
   imageCreditName?: string | null;
   imageCreditUrl?: string | null;
+  imageLicense?: string | null;
   ingredients: RecipeIngredient[];
 };
 
@@ -169,6 +170,7 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
             imageUrl={recipe.imageUrl}
             creditName={recipe.imageCreditName}
             creditUrl={recipe.imageCreditUrl}
+            license={recipe.imageLicense}
           />
         </div>
 

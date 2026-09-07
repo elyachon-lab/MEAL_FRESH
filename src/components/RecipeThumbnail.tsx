@@ -17,12 +17,14 @@ export default function RecipeThumbnail({
   imageUrl,
   creditName,
   creditUrl,
+  license,
   height = 150,
 }: {
   title: string;
   imageUrl?: string | null;
   creditName?: string | null;
   creditUrl?: string | null;
+  license?: string | null;
   height?: number;
 }) {
   const [failed, setFailed] = useState(false);
@@ -59,11 +61,13 @@ export default function RecipeThumbnail({
           />
           {creditName && (
             <a
-              href={creditUrl ?? "https://unsplash.com"}
+              href={creditUrl ?? "https://openverse.org"}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              title={`Photo de ${creditName} sur Unsplash`}
+              // Les licences Creative Commons imposent de citer l'auteur ET la
+              // licence : le badge porte les deux, et renvoie à la source.
+              title={`Photo de ${creditName}${license ? ` — ${license}` : ""}`}
               style={{
                 position: "absolute",
                 right: "0.35rem",
@@ -81,6 +85,7 @@ export default function RecipeThumbnail({
               }}
             >
               📷 {creditName}
+              {license ? ` · ${license}` : ""}
             </a>
           )}
         </>

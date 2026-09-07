@@ -12,6 +12,7 @@ export const RECIPE_SELECT = `
   image_url,
   image_credit_name,
   image_credit_url,
+  image_license,
   created_at,
   ingredients:recipe_ingredients (
     quantity,
@@ -34,6 +35,7 @@ export function mapRecipe(row: RecipeRow) {
     imageUrl: row.image_url ?? null,
     imageCreditName: row.image_credit_name ?? null,
     imageCreditUrl: row.image_credit_url ?? null,
+    imageLicense: row.image_license ?? null,
     createdAt: row.created_at,
     ingredients: (row.ingredients ?? [])
       .filter((line: any) => line?.ingredient)

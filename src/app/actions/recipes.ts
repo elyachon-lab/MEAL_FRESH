@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/dal";
 import { findOrCreateIngredient, listCategories } from "@/lib/ingredients";
 import { RECIPE_SELECT, mapRecipe } from "@/lib/mappers";
-import { findRecipePhoto, isUnsplashConfigured } from "@/lib/unsplash";
+import { findRecipePhoto } from "@/lib/recipe-photos";
 
 type IngredientInput = { name: string; categoryId?: string; quantity?: string };
 
@@ -176,9 +176,9 @@ export async function deleteRecipe(id: string) {
 /**
  * Illustre les recettes qui n'ont pas encore de photo.
  *
- * Traité par petits lots et non en une passe : une application Unsplash en
- * mode « demo » est plafonnée à 50 requêtes par heure, et une centaine de
- * recettes dépasserait le quota au premier clic. L'appelant relance tant que
+ * Traité par petits lots et non en une passe : les banques d'images sont
+ * interrogées une recette à la fois, et une centaine d'appels d'affilée
+ * tiendrait la requête ouverte trop longtemps. L'appelant relance tant que
  * `remaining` n'est pas nul, et voit où il en est.
  *
  * La photo est aussi écrite sur le modèle starter_recipes quand le titre y
@@ -187,15 +187,6 @@ export async function deleteRecipe(id: string) {
 export async function fillMissingRecipeImages(batchSize: number = 10) {
   try {
     const { supabase } = await requireSession();
-
-    if (!isUnsplashConfigured()) {
-      return {
-        success: false as const,
-        configured: false as const,
-        error:
-          "Clé Unsplash absente. Renseignez UNSPLASH_ACCESS_KEY dans les variables d'environnement (voir .env.example).",
-      };
-    }
 
     const { data: pending, error } = await supabase
       .from("recipes")
@@ -206,7 +197,7 @@ export async function fillMissingRecipeImages(batchSize: number = 10) {
     if (error) throw new Error(error.message);
 
     if (!pending || pending.length === 0) {
-      return { success: true as const, configured: true as const, illustrated: 0, remaining: 0, notFound: 0 };
+      return { success: true as const, illustrated: 0, remaining: 0, notFound: 0 };
     }
 
     let illustrated = 0;
@@ -223,6 +214,7 @@ export async function fillMissingRecipeImages(batchSize: number = 10) {
         image_url: photo.url,
         image_credit_name: photo.creditName,
         image_credit_url: photo.creditUrl,
+        image_license: photo.license,
       };
 
       const { error: updateError } = await supabase.from("recipes").update(patch).eq("id", recipe.id);
@@ -243,13 +235,12 @@ export async function fillMissingRecipeImages(batchSize: number = 10) {
 
     return {
       success: true as const,
-      configured: true as const,
       illustrated,
       notFound,
       remaining: count ?? 0,
     };
   } catch (err: any) {
     console.error("fillMissingRecipeImages:", err?.message ?? err);
-    return { success: false as const, configured: true as const, error: err?.message || "Erreur lors de la recherche d'images." };
+    return { success: false as const, error: err?.message || "Erreur lors de la recherche d'images." };
   }
 }
