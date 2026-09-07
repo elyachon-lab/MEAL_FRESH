@@ -26,6 +26,13 @@ type MonthlyBudgetType = {
   expenses: ExpenseItem[];
 };
 
+type PaymentCard = {
+  id: string;
+  name: string;
+  icon: string;
+  budgetAmount: number;
+};
+
 type BudgetUIProps = {
   budget: MonthlyBudgetType;
 };
@@ -39,7 +46,10 @@ const CATEGORIES = [
   { id: "Autre", label: "Autre / Restauration", icon: "🧾", color: "#805AD5" },
 ];
 
+const CARD_ICONS = ["💳", "🍽️", "🟢", "👛", "🏦", "💳", "🎟️", "🛒"];
+
 const getRestoCardKey = (mStr: string) => `mealfresh_resto_card_${mStr}`;
+const getCardsKey = (mStr: string) => `mealfresh_custom_cards_v3_${mStr}`;
 
 const loadRestoAmount = (mStr: string) => {
   if (typeof window === "undefined") return 0;
@@ -51,10 +61,31 @@ const loadRestoAmount = (mStr: string) => {
   }
 };
 
-const saveRestoAmount = (mStr: string, amount: number) => {
+const getDefaultCards = (mStr: string, defaultCB: number): PaymentCard[] => {
+  const restoVal = loadRestoAmount(mStr);
+  return [
+    { id: "card_cb", name: "Carte Perso / CB", icon: "💳", budgetAmount: defaultCB },
+    { id: "card_resto", name: "Carte Resto", icon: "🍽️", budgetAmount: restoVal },
+  ];
+};
+
+const loadCustomCards = (mStr: string, defaultCB: number): PaymentCard[] => {
+  if (typeof window === "undefined") return getDefaultCards(mStr, defaultCB);
+  try {
+    const val = localStorage.getItem(getCardsKey(mStr));
+    if (!val) return getDefaultCards(mStr, defaultCB);
+    const parsed = JSON.parse(val);
+    if (!Array.isArray(parsed) || parsed.length === 0) return getDefaultCards(mStr, defaultCB);
+    return parsed;
+  } catch {
+    return getDefaultCards(mStr, defaultCB);
+  }
+};
+
+const saveCustomCards = (mStr: string, cards: PaymentCard[]) => {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(getRestoCardKey(mStr), amount.toString());
+    localStorage.setItem(getCardsKey(mStr), JSON.stringify(cards));
   } catch {}
 };
 
@@ -79,6 +110,20 @@ function getExpenseWeekKey(expense: ExpenseItem): string {
   return getWeekKeyFromDate(expense.date);
 }
 
+function getExpenseCardId(expense: ExpenseItem, cards: PaymentCard[]): string {
+  if (!expense.description) return cards[0]?.id || "card_cb";
+  const match = expense.description.match(/\[Card:([^\]]+)\]/);
+  if (match && match[1]) {
+    const found = cards.find(c => c.id === match[1]);
+    if (found) return found.id;
+  }
+  if (expense.description.includes("[Carte Resto]")) {
+    const restoCard = cards.find(c => c.id === "card_resto" || c.name.toLowerCase().includes("resto"));
+    if (restoCard) return restoCard.id;
+  }
+  return cards[0]?.id || "card_cb";
+}
+
 export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   const [currentMonthDate, setCurrentMonthDate] = useState<Date>(
     parseISO(`${initialBudget.month}-01`)
@@ -86,30 +131,33 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   
   const currentMonthStr = format(currentMonthDate, "yyyy-MM");
 
-  // Budget Perso / CB du mois
-  const [budgetAmount, setBudgetAmount] = useState<number>(initialBudget.amount);
+  // Cartes de paiement configurées
+  const [cards, setCards] = useState<PaymentCard[]>(() =>
+    loadCustomCards(initialBudget.month, initialBudget.amount)
+  );
 
-  // Solde Carte Resto du mois
-  const [restoCardAmount, setRestoCardAmount] = useState<number>(() => loadRestoAmount(initialBudget.month));
+  // Formulaire d'ajout d'une nouvelle carte
+  const [showAddCardModal, setShowAddCardModal] = useState(false);
+  const [newCardName, setNewCardName] = useState("");
+  const [newCardIcon, setNewCardIcon] = useState("💳");
+  const [newCardAmount, setNewCardAmount] = useState("");
 
-  // Dépenses du mois affiché
+  // Édition en ligne d'une carte
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editingCardName, setEditingCardName] = useState("");
+  const [editingCardAmount, setEditingCardAmount] = useState("");
+
+  // Dépenses du mois
   const [expenses, setExpenses] = useState<ExpenseItem[]>(initialBudget.expenses);
   const [isLoadingMonth, setIsLoadingMonth] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // États d'édition des montants de budget
-  const [isEditingBudget, setIsEditingBudget] = useState(false);
-  const [budgetAmountInput, setBudgetAmountInput] = useState(budgetAmount.toString());
-
-  const [isEditingResto, setIsEditingResto] = useState(false);
-  const [restoAmountInput, setRestoAmountInput] = useState(restoCardAmount.toString());
 
   // État d'édition d'une dépense existante
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [editExpenseDate, setEditExpenseDate] = useState("");
   const [editExpenseAmount, setEditExpenseAmount] = useState("");
   const [editExpenseCategory, setEditExpenseCategory] = useState("Supermarché");
-  const [editExpensePaymentMethod, setEditExpensePaymentMethod] = useState<"CB" | "RESTO">("CB");
+  const [editExpenseCardId, setEditExpenseCardId] = useState<string>("");
   const [editExpenseWeek, setEditExpenseWeek] = useState("AUTO");
   const [editExpenseDescription, setEditExpenseDescription] = useState("");
 
@@ -120,16 +168,23 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   const [expenseDate, setExpenseDate] = useState(todayStr);
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("Supermarché");
-  const [expensePaymentMethod, setExpensePaymentMethod] = useState<"CB" | "RESTO">("CB");
+  const [expenseCardId, setExpenseCardId] = useState<string>("");
   const [expenseWeek, setExpenseWeek] = useState<string>("AUTO");
   const [expenseDescription, setExpenseDescription] = useState("");
 
-  // Recharger lors des changements de mois
+  // Synchroniser la carte sélectionnée par défaut
   useEffect(() => {
-    setRestoCardAmount(loadRestoAmount(currentMonthStr));
+    if (cards.length > 0 && (!expenseCardId || !cards.some(c => c.id === expenseCardId))) {
+      setExpenseCardId(cards[0].id);
+    }
+  }, [cards, expenseCardId]);
+
+  // Recharger les données lors des changements de mois
+  useEffect(() => {
+    const loadedCards = loadCustomCards(currentMonthStr, initialBudget.amount);
+    setCards(loadedCards);
 
     if (currentMonthStr === initialBudget.month) {
-      setBudgetAmount(initialBudget.amount);
       setExpenses(initialBudget.expenses);
       return;
     }
@@ -140,7 +195,6 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     getMonthlyBudget(currentMonthStr)
       .then((data) => {
         if (cancelled) return;
-        setBudgetAmount(data.amount);
         setExpenses(data.expenses);
       })
       .catch(() => {
@@ -155,35 +209,47 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     };
   }, [currentMonthStr, initialBudget]);
 
-  useEffect(() => {
-    setBudgetAmountInput(budgetAmount.toString());
-  }, [budgetAmount]);
+  // Sauvegarder les cartes à chaque modification
+  const updateCardsState = (newCards: PaymentCard[]) => {
+    setCards(newCards);
+    saveCustomCards(currentMonthStr, newCards);
 
-  useEffect(() => {
-    setRestoAmountInput(restoCardAmount.toString());
-  }, [restoCardAmount]);
+    // Mettre à jour la première carte CB sur le serveur de manière transparente
+    const cbCard = newCards.find(c => c.id === "card_cb") || newCards[0];
+    if (cbCard) {
+      startTransition(async () => {
+        await updateBudgetAmount(currentMonthStr, cbCard.budgetAmount);
+      });
+    }
+  };
 
-  // CALCULS FINANCIERS CUMULÉS & SOMME GLOBALE
+  // CALCULS PAR CARTE ET SOMME GLOBALE
+  const cardBreakdown = useMemo(() => {
+    return cards.map((card) => {
+      const cardExpenses = expenses.filter(e => getExpenseCardId(e, cards) === card.id);
+      const spent = cardExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
+      const remaining = card.budgetAmount - spent;
+      const percentage = card.budgetAmount > 0 ? Math.min(Math.round((spent / card.budgetAmount) * 100), 100) : 0;
+      return {
+        ...card,
+        spent,
+        remaining,
+        percentage,
+        count: cardExpenses.length,
+      };
+    });
+  }, [cards, expenses]);
+
   const totalBudgetGlobal = useMemo(() => {
-    return budgetAmount + restoCardAmount;
-  }, [budgetAmount, restoCardAmount]);
+    return cards.reduce((acc, curr) => acc + curr.budgetAmount, 0);
+  }, [cards]);
 
   const totalSpent = useMemo(() => {
     return expenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
   }, [expenses]);
 
-  const totalSpentResto = useMemo(() => {
-    return expenses
-      .filter(e => e.description?.includes("[Carte Resto]"))
-      .reduce((acc, curr) => acc + Number(curr.amount), 0);
-  }, [expenses]);
-
-  const totalSpentCB = useMemo(() => {
-    return totalSpent - totalSpentResto;
-  }, [totalSpent, totalSpentResto]);
-
-  const remainingBudget = totalBudgetGlobal - totalSpent;
-  const percentageSpent = totalBudgetGlobal > 0 ? Math.min(Math.round((totalSpent / totalBudgetGlobal) * 100), 100) : 0;
+  const remainingBudgetGlobal = totalBudgetGlobal - totalSpent;
+  const percentageSpentGlobal = totalBudgetGlobal > 0 ? Math.min(Math.round((totalSpent / totalBudgetGlobal) * 100), 100) : 0;
 
   // Répartition par catégorie
   const categoryTotals = useMemo(() => {
@@ -222,38 +288,47 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     return getWeekKeyFromDate(expenseDate);
   }, [expenseDate]);
 
-  // Mise à jour du montant du budget Perso / CB
-  const handleUpdateBudget = (e: React.FormEvent) => {
+  // GESTION DES CARTES (Ajout, Édition, Suppression)
+  const handleAddCard = (e: React.FormEvent) => {
     e.preventDefault();
-    const val = parseFloat(budgetAmountInput);
-    if (!isNaN(val) && val >= 0) {
-      const previous = budgetAmount;
-      setBudgetAmount(val);
-      setIsEditingBudget(false);
-      setErrorMsg(null);
+    const amt = parseFloat(newCardAmount);
+    if (!newCardName.trim() || isNaN(amt) || amt < 0) return;
 
-      startTransition(async () => {
-        const res = await updateBudgetAmount(currentMonthStr, val);
-        if (!res.success) {
-          setBudgetAmount(previous);
-          setErrorMsg(res.error ?? "Le budget n'a pas pu être enregistré.");
-        }
-      });
-    }
+    const newCard: PaymentCard = {
+      id: "card_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+      name: newCardName.trim(),
+      icon: newCardIcon,
+      budgetAmount: amt,
+    };
+
+    updateCardsState([...cards, newCard]);
+    setNewCardName("");
+    setNewCardAmount("");
+    setShowAddCardModal(false);
   };
 
-  // Mise à jour du solde Carte Resto
-  const handleUpdateResto = (e: React.FormEvent) => {
-    e.preventDefault();
-    const val = parseFloat(restoAmountInput);
-    if (!isNaN(val) && val >= 0) {
-      setRestoCardAmount(val);
-      saveRestoAmount(currentMonthStr, val);
-      setIsEditingResto(false);
-    }
+  const handleSaveCardEdit = (cardId: string) => {
+    const amt = parseFloat(editingCardAmount);
+    if (isNaN(amt) || amt < 0) return;
+
+    const updated = cards.map(c => {
+      if (c.id === cardId) {
+        return { ...c, name: editingCardName.trim() || c.name, budgetAmount: amt };
+      }
+      return c;
+    });
+
+    updateCardsState(updated);
+    setEditingCardId(null);
   };
 
-  // AJOUT D'UNE DÉPENSE
+  const handleDeleteCard = (cardId: string) => {
+    if (cards.length <= 1) return; // Garder au moins 1 carte
+    const updated = cards.filter(c => c.id !== cardId);
+    updateCardsState(updated);
+  };
+
+  // AJOUT D'UNE DÉPENSE (AVEC SÉLECTION DE LA CARTE)
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
     if (isPending) return;
@@ -265,9 +340,9 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     const rawNote = expenseDescription.trim();
 
     const weekTag = expenseWeek !== "AUTO" ? `[${expenseWeek}]` : "";
-    const restoTag = expensePaymentMethod === "RESTO" ? "[Carte Resto]" : "";
+    const cardTag = `[Card:${expenseCardId}]`;
 
-    let formattedDesc = `${weekTag}${restoTag}`;
+    let formattedDesc = `${weekTag}${cardTag}`;
     if (rawNote) formattedDesc += `${formattedDesc ? " " : ""}${rawNote}`;
 
     setExpenses(prev => [
@@ -299,7 +374,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
 
   // LANCER L'ÉDITION D'UNE DÉPENSE EXISTANTE
   const handleStartEditExpense = (expense: ExpenseItem) => {
-    const isResto = expense.description?.includes("[Carte Resto]") ?? false;
+    const cardId = getExpenseCardId(expense, cards);
     let weekTag = "AUTO";
     if (expense.description?.includes("[S1]")) weekTag = "S1";
     else if (expense.description?.includes("[S2]")) weekTag = "S2";
@@ -308,6 +383,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     else if (expense.description?.includes("[S5]")) weekTag = "S5";
 
     const cleanDesc = (expense.description || "")
+      .replace(/\[Card:[^\]]+\]/g, "")
       .replace(/\[S[1-5]\]/g, "")
       .replace("[Carte Resto]", "")
       .trim();
@@ -316,7 +392,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     setEditExpenseDate(format(new Date(expense.date), "yyyy-MM-dd"));
     setEditExpenseAmount(expense.amount.toString());
     setEditExpenseCategory(expense.category);
-    setEditExpensePaymentMethod(isResto ? "RESTO" : "CB");
+    setEditExpenseCardId(cardId);
     setEditExpenseWeek(weekTag);
     setEditExpenseDescription(cleanDesc);
   };
@@ -330,10 +406,10 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     if (isNaN(amt) || amt <= 0) return;
 
     const weekTagStr = editExpenseWeek !== "AUTO" ? `[${editExpenseWeek}]` : "";
-    const restoTagStr = editExpensePaymentMethod === "RESTO" ? "[Carte Resto]" : "";
+    const cardTagStr = `[Card:${editExpenseCardId}]`;
     const rawNote = editExpenseDescription.trim();
 
-    let formattedDesc = `${weekTagStr}${restoTagStr}`;
+    let formattedDesc = `${weekTagStr}${cardTagStr}`;
     if (rawNote) formattedDesc += `${formattedDesc ? " " : ""}${rawNote}`;
 
     const targetId = editingExpenseId;
@@ -411,10 +487,10 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
       <div className="budget-header-card card" style={{ padding: "1.5rem" }}>
         <div className="budget-header-main" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1.25rem" }}>
           <div style={{ flex: 1, minWidth: "260px" }}>
-            <div className="badge badge-accent mb-1">🧮 Budget Global (CB + Carte Resto)</div>
+            <div className="badge badge-accent mb-1">💳 Gestion Multi-Cartes & Budgets</div>
             <h1 style={{ textTransform: "capitalize", margin: ".25rem 0" }}>Budget du Mois — {monthTitle}</h1>
             <p className="text-secondary text-sm" style={{ margin: 0 }}>
-              Attribuez et modifiez vos dépenses en toute simplicité.
+              Gérez vos différentes cartes (CB, Carte Resto, Compte Joint...) et consultez ce qu'il reste en détail sur chacune.
             </p>
           </div>
 
@@ -450,69 +526,199 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
               Mois Suivant ▶
             </button>
           </div>
-
-          {/* Configuration des Budgets (CB & Carte Resto) */}
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-            
-            {/* Budget Perso / CB */}
-            <div className="budget-edit-box" style={{ background: "var(--bg)", padding: "0.75rem 1rem", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-              <span className="text-xs text-muted" style={{ display: "block" }}>💳 Budget Perso / CB</span>
-              {isEditingBudget ? (
-                <form onSubmit={handleUpdateBudget} className="budget-inline-form" style={{ display: "flex", gap: "0.4rem", marginTop: "0.25rem" }}>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="input-field input-sm"
-                    style={{ width: "90px" }}
-                    value={budgetAmountInput}
-                    onChange={(e) => setBudgetAmountInput(e.target.value)}
-                    autoFocus
-                  />
-                  <button type="submit" className="btn btn-primary btn-sm" disabled={isPending}>OK</button>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIsEditingBudget(false)}>✕</button>
-                </form>
-              ) : (
-                <div className="budget-amount-display" style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.2rem" }}>
-                  <span className="amount-number" style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--primary)" }}>{budgetAmount.toFixed(2)} €</span>
-                  <button type="button" className="btn btn-outline btn-sm" style={{ padding: "0.15rem 0.4rem", fontSize: "0.75rem" }} onClick={() => { setBudgetAmountInput(budgetAmount.toString()); setIsEditingBudget(true); }}>
-                    ✏️
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Solde Carte Resto */}
-            <div className="budget-edit-box" style={{ background: "var(--bg)", padding: "0.75rem 1rem", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-              <span className="text-xs text-muted" style={{ display: "block" }}>🍽️ Solde Carte Resto</span>
-              {isEditingResto ? (
-                <form onSubmit={handleUpdateResto} className="budget-inline-form" style={{ display: "flex", gap: "0.4rem", marginTop: "0.25rem" }}>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="input-field input-sm"
-                    style={{ width: "90px" }}
-                    value={restoAmountInput}
-                    onChange={(e) => setRestoAmountInput(e.target.value)}
-                    autoFocus
-                  />
-                  <button type="submit" className="btn btn-primary btn-sm">OK</button>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIsEditingResto(false)}>✕</button>
-                </form>
-              ) : (
-                <div className="budget-amount-display" style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.2rem" }}>
-                  <span className="amount-number" style={{ fontSize: "1.15rem", fontWeight: 800, color: "#319795" }}>{restoCardAmount.toFixed(2)} €</span>
-                  <button type="button" className="btn btn-outline btn-sm" style={{ padding: "0.15rem 0.4rem", fontSize: "0.75rem" }} onClick={() => { setRestoAmountInput(restoCardAmount.toString()); setIsEditingResto(true); }}>
-                    ✏️
-                  </button>
-                </div>
-              )}
-            </div>
-
-          </div>
         </div>
       </div>
 
-      {/* ── Cartes d'Indicateurs Clés (KPI Cumulés avec Somme Globale) ── */}
+      {/* ── SECTION EXCLUSIVE : RUSTES EN DÉTAIL PAR CARTE DE PAIEMENT ── */}
+      <div style={{ margin: "1.5rem 0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
+          <div>
+            <h2 style={{ fontSize: "1.2rem", margin: 0 }}>💳 Vos Cartes & Solde Reste à Dépenser</h2>
+            <p className="text-xs text-muted" style={{ margin: 0 }}>
+              Chaque carte possède son budget alloué et son solde restant en temps réel.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowAddCardModal(true)}
+          >
+            ➕ Ajouter une nouvelle carte
+          </button>
+        </div>
+
+        {/* Formulaire modale d'ajout d'une nouvelle carte */}
+        {showAddCardModal && (
+          <div className="card panel" style={{ padding: "1.25rem", marginBottom: "1.25rem", background: "var(--bg)", border: "2px solid var(--primary-light)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem" }}>
+              <h3 style={{ fontSize: "1rem", margin: 0 }}>➕ Ajouter une Carte de Paiement</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddCardModal(false)}>✕</button>
+            </div>
+
+            <form onSubmit={handleAddCard} style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div style={{ flex: 1, minWidth: "160px" }}>
+                <label className="text-xs text-muted" style={{ display: "block" }}>Nom de la carte *</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Swile, Edenred, N26..."
+                  className="input-field input-sm"
+                  style={{ width: "100%" }}
+                  value={newCardName}
+                  onChange={(e) => setNewCardName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ width: "90px" }}>
+                <label className="text-xs text-muted" style={{ display: "block" }}>Icône</label>
+                <select
+                  className="input-field input-sm"
+                  style={{ width: "100%" }}
+                  value={newCardIcon}
+                  onChange={(e) => setNewCardIcon(e.target.value)}
+                >
+                  {CARD_ICONS.map((icon, idx) => (
+                    <option key={idx} value={icon}>{icon}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ width: "130px" }}>
+                <label className="text-xs text-muted" style={{ display: "block" }}>Budget Alloué (€) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex: 150.00"
+                  className="input-field input-sm"
+                  style={{ width: "100%" }}
+                  value={newCardAmount}
+                  onChange={(e) => setNewCardAmount(e.target.value)}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary btn-sm">Enregistrer la carte</button>
+            </form>
+          </div>
+        )}
+
+        {/* Grille des Cartes avec Reste en Détail */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1.25rem" }}>
+          {cardBreakdown.map((card) => {
+            const isEditing = editingCardId === card.id;
+
+            return (
+              <div
+                key={card.id}
+                className="card"
+                style={{
+                  padding: "1.25rem",
+                  background: card.id === "card_resto" ? "linear-gradient(135deg, rgba(49,151,149,0.06) 0%, rgba(49,151,149,0.12) 100%)" : "var(--surface)",
+                  border: "1.5px solid var(--border)",
+                  borderRadius: "var(--radius-lg)"
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontSize: "1.5rem" }}>{card.icon}</span>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>{card.name}</h3>
+                      <span className="text-xs text-muted">{card.count} opération{card.count > 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "0.25rem" }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: "0.15rem 0.4rem", fontSize: "0.8rem" }}
+                      onClick={() => {
+                        setEditingCardId(card.id);
+                        setEditingCardName(card.name);
+                        setEditingCardAmount(card.budgetAmount.toString());
+                      }}
+                      title="Modifier le budget de cette carte"
+                    >
+                      ✏️
+                    </button>
+
+                    {cards.length > 1 && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: "0.15rem 0.4rem", fontSize: "0.8rem" }}
+                        onClick={() => handleDeleteCard(card.id)}
+                        title="Supprimer la carte"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {isEditing ? (
+                  <div style={{ marginTop: "0.5rem", background: "var(--bg)", padding: "0.75rem", borderRadius: "var(--radius-md)" }}>
+                    <label className="text-xs text-muted" style={{ display: "block" }}>Nom & Budget (€)</label>
+                    <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.25rem" }}>
+                      <input
+                        type="text"
+                        className="input-field input-sm"
+                        style={{ flex: 1 }}
+                        value={editingCardName}
+                        onChange={(e) => setEditingCardName(e.target.value)}
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="input-field input-sm"
+                        style={{ width: "80px" }}
+                        value={editingCardAmount}
+                        onChange={(e) => setEditingCardAmount(e.target.value)}
+                      />
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => handleSaveCardEdit(card.id)}>OK</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem", background: "var(--bg)", padding: "0.6rem 0.75rem", borderRadius: "var(--radius-md)" }}>
+                      <div>
+                        <span className="text-xs text-muted" style={{ display: "block" }}>Budget Alloué</span>
+                        <strong style={{ fontSize: "1rem" }}>{card.budgetAmount.toFixed(2)} €</strong>
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted" style={{ display: "block" }}>Total Dépensé</span>
+                        <strong style={{ fontSize: "1rem", color: "var(--primary)" }}>{card.spent.toFixed(2)} €</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: "0.5rem" }}>
+                      <span className="text-xs text-secondary fw-600">Reste disponible :</span>
+                      <span style={{ fontSize: "1.3rem", fontWeight: 900, color: card.remaining < 0 ? "var(--danger)" : "#319795" }}>
+                        {card.remaining.toFixed(2)} €
+                      </span>
+                    </div>
+
+                    <div className="progress-bar-bg" style={{ background: "var(--border)", borderRadius: "999px", height: "6px", overflow: "hidden", marginTop: "0.5rem" }}>
+                      <div
+                        className="progress-bar-fill"
+                        style={{
+                          height: "100%",
+                          width: `${card.percentage}%`,
+                          backgroundColor: card.remaining < 0 ? "var(--danger)" : "#319795",
+                          transition: "width 0.4s ease"
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Cartes d'Indicateurs Clés Globaux (Somme Totale) ── */}
       <div className="kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", margin: "1.5rem 0" }}>
         
         {/* CARTE MAJEURE : SOMME TOTALE DISPONIBLE */}
@@ -520,7 +726,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
           <div className="kpi-icon" style={{ fontSize: "2rem" }}>💰</div>
           <div className="kpi-content">
             <span className="kpi-label" style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 700 }}>
-              Somme Globale Disponible (CB + Resto)
+              Somme Globale Disponible ({cards.length} cartes)
             </span>
             <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
               <span className="kpi-value" style={{ fontSize: "1.5rem", fontWeight: 900, color: "var(--primary)" }}>
@@ -528,7 +734,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
               </span>
             </div>
             <span className="text-xs text-muted" style={{ fontSize: "0.72rem" }}>
-              {budgetAmount.toFixed(0)}€ (CB) + {restoCardAmount.toFixed(0)}€ (Resto)
+              Cumul de vos {cards.length} cartes de paiement
             </span>
           </div>
         </div>
@@ -538,11 +744,6 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
           <div className="kpi-content">
             <span className="kpi-label" style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Total Dépenses Cumulées</span>
             <span className="kpi-value text-orange" style={{ fontSize: "1.4rem", fontWeight: 800, color: "var(--primary)" }}>{totalSpent.toFixed(2)} €</span>
-            {totalSpentResto > 0 && (
-              <span className="text-xs text-muted" style={{ fontSize: "0.72rem" }}>
-                {totalSpentCB.toFixed(0)}€ CB • {totalSpentResto.toFixed(0)}€ Resto
-              </span>
-            )}
           </div>
         </div>
 
@@ -550,8 +751,8 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
           <div className="kpi-icon" style={{ fontSize: "2rem" }}>✨</div>
           <div className="kpi-content">
             <span className="kpi-label" style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Reste à Dépenser Total</span>
-            <span className={`kpi-value ${remainingBudget < 0 ? 'text-danger' : 'text-accent'}`} style={{ fontSize: "1.4rem", fontWeight: 800 }}>
-              {remainingBudget.toFixed(2)} €
+            <span className={`kpi-value ${remainingBudgetGlobal < 0 ? 'text-danger' : 'text-accent'}`} style={{ fontSize: "1.4rem", fontWeight: 800 }}>
+              {remainingBudgetGlobal.toFixed(2)} €
             </span>
           </div>
         </div>
@@ -560,16 +761,16 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
           <div className="kpi-icon" style={{ fontSize: "2rem" }}>📊</div>
           <div className="kpi-content" style={{ width: "100%" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
-              <span className="kpi-label" style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Consommé</span>
-              <span className="fw-700 text-sm">{percentageSpent}%</span>
+              <span className="kpi-label" style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Consommé Global</span>
+              <span className="fw-700 text-sm">{percentageSpentGlobal}%</span>
             </div>
             <div className="progress-bar-bg" style={{ background: "var(--border)", borderRadius: "999px", height: "8px", overflow: "hidden" }}>
               <div
                 className="progress-bar-fill"
                 style={{
                   height: "100%",
-                  width: `${percentageSpent}%`,
-                  backgroundColor: percentageSpent > 90 ? "var(--danger)" : "var(--primary)",
+                  width: `${percentageSpentGlobal}%`,
+                  backgroundColor: percentageSpentGlobal > 90 ? "var(--danger)" : "var(--primary)",
                   transition: "width 0.4s ease"
                 }}
               />
@@ -601,6 +802,25 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                 />
               </div>
 
+              {/* SÉLECTEUR DE CARTE DE PAIEMENT */}
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label className="input-label" style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+                  💳 Carte de paiement utilisée
+                </label>
+                <select
+                  className="input-field"
+                  value={expenseCardId}
+                  onChange={(e) => setExpenseCardId(e.target.value)}
+                  style={{ fontWeight: 600 }}
+                >
+                  {cards.map(card => (
+                    <option key={card.id} value={card.id}>
+                      {card.icon} {card.name} (Reste: {(card.budgetAmount - expenses.filter(e => getExpenseCardId(e, cards) === card.id).reduce((s, e) => s + Number(e.amount), 0)).toFixed(2)} €)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* SÉLECTEUR DE SEMAINE DE LA DÉPENSE */}
               <div className="input-group" style={{ marginBottom: 0 }}>
                 <label className="input-label" style={{ fontSize: "0.85rem", fontWeight: 700 }}>
@@ -619,29 +839,6 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                   <option value="S4">📅 Semaine 4 (du 22 au 28)</option>
                   <option value="S5">📅 Semaine 5 (du 29 au 31)</option>
                 </select>
-              </div>
-
-              {/* Moyen de Paiement (CB vs Carte Resto) */}
-              <div className="input-group" style={{ marginBottom: 0 }}>
-                <label className="input-label" style={{ fontSize: "0.85rem" }}>Moyen de paiement</label>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${expensePaymentMethod === "CB" ? "btn-primary" : "btn-outline"}`}
-                    style={{ flex: 1, fontSize: "0.8rem", padding: "0.4rem" }}
-                    onClick={() => setExpensePaymentMethod("CB")}
-                  >
-                    💳 Carte Perso / CB
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${expensePaymentMethod === "RESTO" ? "btn-primary" : "btn-outline"}`}
-                    style={{ flex: 1, fontSize: "0.8rem", padding: "0.4rem", backgroundColor: expensePaymentMethod === "RESTO" ? "#319795" : undefined, borderColor: expensePaymentMethod === "RESTO" ? "#319795" : undefined }}
-                    onClick={() => setExpensePaymentMethod("RESTO")}
-                  >
-                    🍽️ Carte Resto
-                  </button>
-                </div>
               </div>
 
               <div className="input-group" style={{ marginBottom: 0 }}>
@@ -783,7 +980,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                       <th style={{ padding: "0.6rem" }}>Date</th>
                       <th style={{ padding: "0.6rem" }}>Semaine</th>
                       <th style={{ padding: "0.6rem" }}>Catégorie</th>
-                      <th style={{ padding: "0.6rem" }}>Note / Enseigne</th>
+                      <th style={{ padding: "0.6rem" }}>Carte / Note</th>
                       <th style={{ padding: "0.6rem", textAlign: "right" }}>Montant</th>
                       <th style={{ padding: "0.6rem", width: "90px", textAlign: "center" }}>Actions</th>
                     </tr>
@@ -832,6 +1029,20 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                                   </div>
 
                                   <div>
+                                    <label className="text-xs text-muted" style={{ display: "block" }}>Carte de paiement</label>
+                                    <select
+                                      className="input-field input-sm"
+                                      style={{ width: "100%" }}
+                                      value={editExpenseCardId}
+                                      onChange={(e) => setEditExpenseCardId(e.target.value)}
+                                    >
+                                      {cards.map(c => (
+                                        <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
                                     <label className="text-xs text-muted" style={{ display: "block" }}>Semaine</label>
                                     <select
                                       className="input-field input-sm"
@@ -864,19 +1075,6 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                                     </select>
                                   </div>
 
-                                  <div>
-                                    <label className="text-xs text-muted" style={{ display: "block" }}>Moyen de paiement</label>
-                                    <select
-                                      className="input-field input-sm"
-                                      style={{ width: "100%" }}
-                                      value={editExpensePaymentMethod}
-                                      onChange={(e) => setEditExpensePaymentMethod(e.target.value as "CB" | "RESTO")}
-                                    >
-                                      <option value="CB">💳 Carte Perso / CB</option>
-                                      <option value="RESTO">🍽️ Carte Resto</option>
-                                    </select>
-                                  </div>
-
                                   <div style={{ gridColumn: "span 2" }}>
                                     <label className="text-xs text-muted" style={{ display: "block" }}>Note / Enseigne</label>
                                     <input
@@ -896,10 +1094,12 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                       }
 
                       const catInfo = CATEGORIES.find((c) => c.id === expense.category);
-                      const isResto = expense.description?.includes("[Carte Resto]");
+                      const assignedCardId = getExpenseCardId(expense, cards);
+                      const assignedCard = cards.find(c => c.id === assignedCardId) || cards[0];
                       const weekKey = getExpenseWeekKey(expense);
 
                       const displayDesc = (expense.description || "")
+                        .replace(/\[Card:[^\]]+\]/g, "")
                         .replace(/\[S[1-5]\]/g, "")
                         .replace("[Carte Resto]", "")
                         .trim() || "—";
@@ -923,22 +1123,16 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                           </td>
                           <td style={{ padding: "0.6rem" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                              {isResto ? (
-                                <span className="chip" style={{ fontSize: "0.7rem", background: "rgba(49,151,149,0.15)", color: "#319795", padding: "0.15rem 0.4rem", borderRadius: "999px", fontWeight: 700 }}>
-                                  🍽️ Carte Resto
-                                </span>
-                              ) : (
-                                <span className="chip" style={{ fontSize: "0.7rem", background: "rgba(255,122,33,0.12)", color: "var(--primary-dark)", padding: "0.15rem 0.4rem", borderRadius: "999px", fontWeight: 700 }}>
-                                  💳 CB
-                                </span>
-                              )}
+                              <span className="chip" style={{ fontSize: "0.7rem", background: "rgba(49,151,149,0.12)", color: "#319795", padding: "0.15rem 0.45rem", borderRadius: "999px", fontWeight: 700 }}>
+                                {assignedCard?.icon || "💳"} {assignedCard?.name || "CB"}
+                              </span>
                               <span className="text-sm text-secondary">
                                 {displayDesc}
                               </span>
                             </div>
                           </td>
                           <td style={{ padding: "0.6rem", textAlign: "right" }}>
-                            <strong style={{ color: isResto ? "#319795" : "var(--primary)" }}>{Number(expense.amount).toFixed(2)} €</strong>
+                            <strong style={{ color: "var(--primary)" }}>{Number(expense.amount).toFixed(2)} €</strong>
                           </td>
                           <td style={{ padding: "0.6rem", textAlign: "center" }}>
                             <div style={{ display: "flex", gap: "0.25rem", justifyContent: "center" }}>
