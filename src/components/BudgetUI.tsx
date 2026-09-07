@@ -7,6 +7,7 @@ import {
   getMonthlyBudget,
   updateBudgetAmount,
   addExpense,
+  updateExpense,
   deleteExpense,
 } from "../app/actions/budget";
 
@@ -91,17 +92,26 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   // Solde Carte Resto du mois
   const [restoCardAmount, setRestoCardAmount] = useState<number>(() => loadRestoAmount(initialBudget.month));
 
-  // Dépenses du mois affiché, chargées depuis la base.
+  // Dépenses du mois affiché
   const [expenses, setExpenses] = useState<ExpenseItem[]>(initialBudget.expenses);
   const [isLoadingMonth, setIsLoadingMonth] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // États d'édition des montants
+  // États d'édition des montants de budget
   const [isEditingBudget, setIsEditingBudget] = useState(false);
   const [budgetAmountInput, setBudgetAmountInput] = useState(budgetAmount.toString());
 
   const [isEditingResto, setIsEditingResto] = useState(false);
   const [restoAmountInput, setRestoAmountInput] = useState(restoCardAmount.toString());
+
+  // État d'édition d'une dépense existante
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [editExpenseDate, setEditExpenseDate] = useState("");
+  const [editExpenseAmount, setEditExpenseAmount] = useState("");
+  const [editExpenseCategory, setEditExpenseCategory] = useState("Supermarché");
+  const [editExpensePaymentMethod, setEditExpensePaymentMethod] = useState<"CB" | "RESTO">("CB");
+  const [editExpenseWeek, setEditExpenseWeek] = useState("AUTO");
+  const [editExpenseDescription, setEditExpenseDescription] = useState("");
 
   const [isPending, startTransition] = useTransition();
 
@@ -243,7 +253,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     }
   };
 
-  // AJOUT D'UNE DÉPENSE (AVEC SEMAINE ET MOYEN DE PAIEMENT)
+  // AJOUT D'UNE DÉPENSE
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
     if (isPending) return;
@@ -254,7 +264,6 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     const tempId = `temp_${Date.now()}`;
     const rawNote = expenseDescription.trim();
 
-    // Formater la note avec le tag de semaine si différent de AUTO
     const weekTag = expenseWeek !== "AUTO" ? `[${expenseWeek}]` : "";
     const restoTag = expensePaymentMethod === "RESTO" ? "[Carte Resto]" : "";
 
@@ -284,6 +293,80 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
       } else {
         setExpenses(prev => prev.filter(e => e.id !== tempId));
         setErrorMsg(res.error ?? "La dépense n'a pas pu être enregistrée.");
+      }
+    });
+  };
+
+  // LANCER L'ÉDITION D'UNE DÉPENSE EXISTANTE
+  const handleStartEditExpense = (expense: ExpenseItem) => {
+    const isResto = expense.description?.includes("[Carte Resto]") ?? false;
+    let weekTag = "AUTO";
+    if (expense.description?.includes("[S1]")) weekTag = "S1";
+    else if (expense.description?.includes("[S2]")) weekTag = "S2";
+    else if (expense.description?.includes("[S3]")) weekTag = "S3";
+    else if (expense.description?.includes("[S4]")) weekTag = "S4";
+    else if (expense.description?.includes("[S5]")) weekTag = "S5";
+
+    const cleanDesc = (expense.description || "")
+      .replace(/\[S[1-5]\]/g, "")
+      .replace("[Carte Resto]", "")
+      .trim();
+
+    setEditingExpenseId(expense.id);
+    setEditExpenseDate(format(new Date(expense.date), "yyyy-MM-dd"));
+    setEditExpenseAmount(expense.amount.toString());
+    setEditExpenseCategory(expense.category);
+    setEditExpensePaymentMethod(isResto ? "RESTO" : "CB");
+    setEditExpenseWeek(weekTag);
+    setEditExpenseDescription(cleanDesc);
+  };
+
+  // SAUVEGARDER LA MODIFICATION D'UNE DÉPENSE
+  const handleSaveEditExpense = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExpenseId) return;
+
+    const amt = parseFloat(editExpenseAmount);
+    if (isNaN(amt) || amt <= 0) return;
+
+    const weekTagStr = editExpenseWeek !== "AUTO" ? `[${editExpenseWeek}]` : "";
+    const restoTagStr = editExpensePaymentMethod === "RESTO" ? "[Carte Resto]" : "";
+    const rawNote = editExpenseDescription.trim();
+
+    let formattedDesc = `${weekTagStr}${restoTagStr}`;
+    if (rawNote) formattedDesc += `${formattedDesc ? " " : ""}${rawNote}`;
+
+    const targetId = editingExpenseId;
+    const previous = expenses;
+
+    setExpenses(prev => prev.map(item => {
+      if (item.id === targetId) {
+        return {
+          ...item,
+          date: editExpenseDate,
+          amount: amt,
+          category: editExpenseCategory,
+          description: formattedDesc || null,
+        };
+      }
+      return item;
+    }));
+
+    setEditingExpenseId(null);
+    setErrorMsg(null);
+
+    startTransition(async () => {
+      const res = await updateExpense({
+        id: targetId,
+        dateStr: editExpenseDate,
+        amount: amt,
+        category: editExpenseCategory,
+        description: formattedDesc,
+      });
+
+      if (!res.success) {
+        setExpenses(previous);
+        setErrorMsg(res.error ?? "La dépense n'a pas pu être modifiée.");
       }
     });
   };
@@ -331,7 +414,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
             <div className="badge badge-accent mb-1">🧮 Budget Global (CB + Carte Resto)</div>
             <h1 style={{ textTransform: "capitalize", margin: ".25rem 0" }}>Budget du Mois — {monthTitle}</h1>
             <p className="text-secondary text-sm" style={{ margin: 0 }}>
-              Attribuez chaque dépense à sa semaine et suivez le cumul global de votre budget.
+              Attribuez et modifiez vos dépenses en toute simplicité.
             </p>
           </div>
 
@@ -702,16 +785,120 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                       <th style={{ padding: "0.6rem" }}>Catégorie</th>
                       <th style={{ padding: "0.6rem" }}>Note / Enseigne</th>
                       <th style={{ padding: "0.6rem", textAlign: "right" }}>Montant</th>
-                      <th style={{ padding: "0.6rem", width: "40px" }}></th>
+                      <th style={{ padding: "0.6rem", width: "90px", textAlign: "center" }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {expenses.map((expense) => {
+                      const isEditingThis = editingExpenseId === expense.id;
+
+                      if (isEditingThis) {
+                        return (
+                          <tr key={expense.id} style={{ background: "var(--surface-hover)", borderBottom: "1px solid var(--border)" }}>
+                            <td colSpan={6} style={{ padding: "1rem" }}>
+                              <form onSubmit={handleSaveEditExpense} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <strong style={{ fontSize: "0.95rem" }}>✏️ Modifier la dépense</strong>
+                                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                                    <button type="submit" className="btn btn-primary btn-sm" disabled={isPending}>💾 Enregistrer</button>
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditingExpenseId(null)}>✕ Annuler</button>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "0.75rem" }}>
+                                  <div>
+                                    <label className="text-xs text-muted" style={{ display: "block" }}>Montant (€) *</label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      className="input-field input-sm"
+                                      style={{ width: "100%" }}
+                                      value={editExpenseAmount}
+                                      onChange={(e) => setEditExpenseAmount(e.target.value)}
+                                      required
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-xs text-muted" style={{ display: "block" }}>Date *</label>
+                                    <input
+                                      type="date"
+                                      className="input-field input-sm"
+                                      style={{ width: "100%" }}
+                                      value={editExpenseDate}
+                                      onChange={(e) => setEditExpenseDate(e.target.value)}
+                                      required
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-xs text-muted" style={{ display: "block" }}>Semaine</label>
+                                    <select
+                                      className="input-field input-sm"
+                                      style={{ width: "100%" }}
+                                      value={editExpenseWeek}
+                                      onChange={(e) => setEditExpenseWeek(e.target.value)}
+                                    >
+                                      <option value="AUTO">⚡ Auto d'après date</option>
+                                      <option value="S1">📅 Semaine 1 (1-7)</option>
+                                      <option value="S2">📅 Semaine 2 (8-14)</option>
+                                      <option value="S3">📅 Semaine 3 (15-21)</option>
+                                      <option value="S4">📅 Semaine 4 (22-28)</option>
+                                      <option value="S5">📅 Semaine 5 (29-31)</option>
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-xs text-muted" style={{ display: "block" }}>Catégorie</label>
+                                    <select
+                                      className="input-field input-sm"
+                                      style={{ width: "100%" }}
+                                      value={editExpenseCategory}
+                                      onChange={(e) => setEditExpenseCategory(e.target.value)}
+                                    >
+                                      {CATEGORIES.map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                          {cat.icon} {cat.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-xs text-muted" style={{ display: "block" }}>Moyen de paiement</label>
+                                    <select
+                                      className="input-field input-sm"
+                                      style={{ width: "100%" }}
+                                      value={editExpensePaymentMethod}
+                                      onChange={(e) => setEditExpensePaymentMethod(e.target.value as "CB" | "RESTO")}
+                                    >
+                                      <option value="CB">💳 Carte Perso / CB</option>
+                                      <option value="RESTO">🍽️ Carte Resto</option>
+                                    </select>
+                                  </div>
+
+                                  <div style={{ gridColumn: "span 2" }}>
+                                    <label className="text-xs text-muted" style={{ display: "block" }}>Note / Enseigne</label>
+                                    <input
+                                      type="text"
+                                      className="input-field input-sm"
+                                      style={{ width: "100%" }}
+                                      value={editExpenseDescription}
+                                      onChange={(e) => setEditExpenseDescription(e.target.value)}
+                                      placeholder="Ex: Carrefour..."
+                                    />
+                                  </div>
+                                </div>
+                              </form>
+                            </td>
+                          </tr>
+                        );
+                      }
+
                       const catInfo = CATEGORIES.find((c) => c.id === expense.category);
                       const isResto = expense.description?.includes("[Carte Resto]");
                       const weekKey = getExpenseWeekKey(expense);
 
-                      // Nettoyer la note des tags [S1..S5] et [Carte Resto]
                       const displayDesc = (expense.description || "")
                         .replace(/\[S[1-5]\]/g, "")
                         .replace("[Carte Resto]", "")
@@ -754,15 +941,28 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                             <strong style={{ color: isResto ? "#319795" : "var(--primary)" }}>{Number(expense.amount).toFixed(2)} €</strong>
                           </td>
                           <td style={{ padding: "0.6rem", textAlign: "center" }}>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              title="Supprimer la dépense"
-                              onClick={() => handleDeleteExpense(expense.id)}
-                              disabled={isPending}
-                            >
-                              🗑️
-                            </button>
+                            <div style={{ display: "flex", gap: "0.25rem", justifyContent: "center" }}>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ padding: "0.2rem 0.4rem" }}
+                                title="Modifier la dépense"
+                                onClick={() => handleStartEditExpense(expense)}
+                                disabled={isPending}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ padding: "0.2rem 0.4rem" }}
+                                title="Supprimer la dépense"
+                                onClick={() => handleDeleteExpense(expense.id)}
+                                disabled={isPending}
+                              >
+                                🗑️
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

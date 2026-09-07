@@ -136,6 +136,43 @@ export async function addExpense(data: {
   }
 }
 
+export async function updateExpense(data: {
+  id: string;
+  dateStr: string;
+  amount: number;
+  category: string;
+  description?: string;
+}) {
+  if (!data.id) return { success: false as const, error: "Identifiant de la dépense invalide." };
+  if (!Number.isFinite(data.amount) || data.amount <= 0 || !data.category) {
+    return { success: false as const, error: "Montant et catégorie requis." };
+  }
+
+  try {
+    const { supabase } = await requireSession();
+
+    const { data: updated, error } = await supabase
+      .from("expenses")
+      .update({
+        date: toDateKey(data.dateStr),
+        amount: data.amount,
+        category: data.category,
+        description: data.description?.trim() || null,
+      })
+      .eq("id", data.id)
+      .select("id, date, amount, category, description")
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/budget");
+    return { success: true as const, expense: mapExpense(updated) };
+  } catch (err: any) {
+    console.error("updateExpense:", err?.message ?? err);
+    return { success: false as const, error: err?.message || "Erreur lors de la modification de la dépense." };
+  }
+}
+
 export async function deleteExpense(expenseId: string) {
   try {
     const { supabase } = await requireSession();
