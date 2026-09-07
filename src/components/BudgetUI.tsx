@@ -57,6 +57,27 @@ const saveRestoAmount = (mStr: string, amount: number) => {
   } catch {}
 };
 
+function getWeekKeyFromDate(d: Date | string): string {
+  const dateObj = new Date(d);
+  const dayNum = dateObj.getDate();
+  if (dayNum > 28) return "S5";
+  if (dayNum > 21) return "S4";
+  if (dayNum > 14) return "S3";
+  if (dayNum > 7) return "S2";
+  return "S1";
+}
+
+function getExpenseWeekKey(expense: ExpenseItem): string {
+  if (expense.description) {
+    if (expense.description.includes("[S1]")) return "S1";
+    if (expense.description.includes("[S2]")) return "S2";
+    if (expense.description.includes("[S3]")) return "S3";
+    if (expense.description.includes("[S4]")) return "S4";
+    if (expense.description.includes("[S5]")) return "S5";
+  }
+  return getWeekKeyFromDate(expense.date);
+}
+
 export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   const [currentMonthDate, setCurrentMonthDate] = useState<Date>(
     parseISO(`${initialBudget.month}-01`)
@@ -90,6 +111,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("Supermarché");
   const [expensePaymentMethod, setExpensePaymentMethod] = useState<"CB" | "RESTO">("CB");
+  const [expenseWeek, setExpenseWeek] = useState<string>("AUTO");
   const [expenseDescription, setExpenseDescription] = useState("");
 
   // Recharger lors des changements de mois
@@ -175,20 +197,20 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     };
 
     expenses.forEach((item) => {
-      const d = new Date(item.date);
-      const dayNum = d.getDate();
-      let weekKey = "S1";
-      if (dayNum > 28) weekKey = "S5";
-      else if (dayNum > 21) weekKey = "S4";
-      else if (dayNum > 14) weekKey = "S3";
-      else if (dayNum > 7) weekKey = "S2";
-
-      groups[weekKey].total += Number(item.amount);
-      groups[weekKey].expenses.push(item);
+      const weekKey = getExpenseWeekKey(item);
+      if (groups[weekKey]) {
+        groups[weekKey].total += Number(item.amount);
+        groups[weekKey].expenses.push(item);
+      }
     });
 
     return groups;
   }, [expenses]);
+
+  // Semaine calculée dynamiquement d'après la date si AUTO
+  const autoCalculatedWeek = useMemo(() => {
+    return getWeekKeyFromDate(expenseDate);
+  }, [expenseDate]);
 
   // Mise à jour du montant du budget Perso / CB
   const handleUpdateBudget = (e: React.FormEvent) => {
@@ -221,7 +243,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
     }
   };
 
-  // AJOUT D'UNE DÉPENSE (AVEC SELECTION DU MOYEN DE PAIEMENT)
+  // AJOUT D'UNE DÉPENSE (AVEC SEMAINE ET MOYEN DE PAIEMENT)
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
     if (isPending) return;
@@ -231,9 +253,13 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
 
     const tempId = `temp_${Date.now()}`;
     const rawNote = expenseDescription.trim();
-    const formattedDesc = expensePaymentMethod === "RESTO"
-      ? `[Carte Resto]${rawNote ? ` ${rawNote}` : ""}`
-      : rawNote;
+
+    // Formater la note avec le tag de semaine si différent de AUTO
+    const weekTag = expenseWeek !== "AUTO" ? `[${expenseWeek}]` : "";
+    const restoTag = expensePaymentMethod === "RESTO" ? "[Carte Resto]" : "";
+
+    let formattedDesc = `${weekTag}${restoTag}`;
+    if (rawNote) formattedDesc += `${formattedDesc ? " " : ""}${rawNote}`;
 
     setExpenses(prev => [
       { id: tempId, date: expenseDate, amount: amt, category: expenseCategory, description: formattedDesc || null },
@@ -305,7 +331,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
             <div className="badge badge-accent mb-1">🧮 Budget Global (CB + Carte Resto)</div>
             <h1 style={{ textTransform: "capitalize", margin: ".25rem 0" }}>Budget du Mois — {monthTitle}</h1>
             <p className="text-secondary text-sm" style={{ margin: 0 }}>
-              Ajoutez votre solde Carte Resto à votre budget perso pour établir la somme totale disponible.
+              Attribuez chaque dépense à sa semaine et suivez le cumul global de votre budget.
             </p>
           </div>
 
@@ -492,6 +518,26 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                 />
               </div>
 
+              {/* SÉLECTEUR DE SEMAINE DE LA DÉPENSE */}
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label className="input-label" style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+                  📅 Semaine attribuée
+                </label>
+                <select
+                  className="input-field"
+                  value={expenseWeek}
+                  onChange={(e) => setExpenseWeek(e.target.value)}
+                  style={{ fontWeight: 600 }}
+                >
+                  <option value="AUTO">⚡ Auto d'après date ({autoCalculatedWeek})</option>
+                  <option value="S1">📅 Semaine 1 (du 1 au 7)</option>
+                  <option value="S2">📅 Semaine 2 (du 8 au 14)</option>
+                  <option value="S3">📅 Semaine 3 (du 15 au 21)</option>
+                  <option value="S4">📅 Semaine 4 (du 22 au 28)</option>
+                  <option value="S5">📅 Semaine 5 (du 29 au 31)</option>
+                </select>
+              </div>
+
               {/* Moyen de Paiement (CB vs Carte Resto) */}
               <div className="input-group" style={{ marginBottom: 0 }}>
                 <label className="input-label" style={{ fontSize: "0.85rem" }}>Moyen de paiement</label>
@@ -652,6 +698,7 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                   <thead>
                     <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
                       <th style={{ padding: "0.6rem" }}>Date</th>
+                      <th style={{ padding: "0.6rem" }}>Semaine</th>
                       <th style={{ padding: "0.6rem" }}>Catégorie</th>
                       <th style={{ padding: "0.6rem" }}>Note / Enseigne</th>
                       <th style={{ padding: "0.6rem", textAlign: "right" }}>Montant</th>
@@ -662,13 +709,24 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                     {expenses.map((expense) => {
                       const catInfo = CATEGORIES.find((c) => c.id === expense.category);
                       const isResto = expense.description?.includes("[Carte Resto]");
-                      const displayDesc = expense.description?.replace("[Carte Resto]", "").trim() || "—";
+                      const weekKey = getExpenseWeekKey(expense);
+
+                      // Nettoyer la note des tags [S1..S5] et [Carte Resto]
+                      const displayDesc = (expense.description || "")
+                        .replace(/\[S[1-5]\]/g, "")
+                        .replace("[Carte Resto]", "")
+                        .trim() || "—";
 
                       return (
                         <tr key={expense.id} style={{ borderBottom: "1px solid var(--border)" }}>
                           <td style={{ padding: "0.6rem" }}>
                             <span className="text-sm fw-500">
                               {format(new Date(expense.date), "dd/MM/yyyy")}
+                            </span>
+                          </td>
+                          <td style={{ padding: "0.6rem" }}>
+                            <span className="chip" style={{ fontSize: "0.75rem", background: "var(--primary-light)", color: "var(--primary-dark)", padding: "0.15rem 0.5rem", borderRadius: "999px", fontWeight: 700 }}>
+                              📅 {weekKey}
                             </span>
                           </td>
                           <td style={{ padding: "0.6rem" }}>
