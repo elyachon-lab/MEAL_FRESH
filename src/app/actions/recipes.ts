@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/dal";
 import { findOrCreateIngredient, listCategories } from "@/lib/ingredients";
 import { RECIPE_SELECT, mapRecipe } from "@/lib/mappers";
+import { findRecipePhoto, isUnsplashConfigured } from "@/lib/unsplash";
 
 type IngredientInput = { name: string; categoryId?: string; quantity?: string };
 
@@ -169,5 +170,86 @@ export async function deleteRecipe(id: string) {
   } catch (err: any) {
     console.error("deleteRecipe:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de la suppression." };
+  }
+}
+
+/**
+ * Illustre les recettes qui n'ont pas encore de photo.
+ *
+ * Traité par petits lots et non en une passe : une application Unsplash en
+ * mode « demo » est plafonnée à 50 requêtes par heure, et une centaine de
+ * recettes dépasserait le quota au premier clic. L'appelant relance tant que
+ * `remaining` n'est pas nul, et voit où il en est.
+ *
+ * La photo est aussi écrite sur le modèle starter_recipes quand le titre y
+ * correspond : le prochain compte créé en hérite sans reconsommer le quota.
+ */
+export async function fillMissingRecipeImages(batchSize: number = 10) {
+  try {
+    const { supabase } = await requireSession();
+
+    if (!isUnsplashConfigured()) {
+      return {
+        success: false as const,
+        configured: false as const,
+        error:
+          "Clé Unsplash absente. Renseignez UNSPLASH_ACCESS_KEY dans les variables d'environnement (voir .env.example).",
+      };
+    }
+
+    const { data: pending, error } = await supabase
+      .from("recipes")
+      .select("id, title")
+      .is("image_url", null)
+      .order("created_at", { ascending: true })
+      .limit(Math.min(Math.max(batchSize, 1), 25));
+    if (error) throw new Error(error.message);
+
+    if (!pending || pending.length === 0) {
+      return { success: true as const, configured: true as const, illustrated: 0, remaining: 0, notFound: 0 };
+    }
+
+    let illustrated = 0;
+    let notFound = 0;
+
+    for (const recipe of pending) {
+      const photo = await findRecipePhoto(recipe.title);
+      if (!photo) {
+        notFound += 1;
+        continue;
+      }
+
+      const patch = {
+        image_url: photo.url,
+        image_credit_name: photo.creditName,
+        image_credit_url: photo.creditUrl,
+      };
+
+      const { error: updateError } = await supabase.from("recipes").update(patch).eq("id", recipe.id);
+      if (updateError) throw new Error(updateError.message);
+
+      // Le modèle partagé profite de la recherche déjà payée.
+      await supabase.from("starter_recipes").update(patch).eq("title", recipe.title).is("image_url", null);
+
+      illustrated += 1;
+    }
+
+    const { count } = await supabase
+      .from("recipes")
+      .select("id", { count: "exact", head: true })
+      .is("image_url", null);
+
+    if (illustrated > 0) refreshRecipeViews();
+
+    return {
+      success: true as const,
+      configured: true as const,
+      illustrated,
+      notFound,
+      remaining: count ?? 0,
+    };
+  } catch (err: any) {
+    console.error("fillMissingRecipeImages:", err?.message ?? err);
+    return { success: false as const, configured: true as const, error: err?.message || "Erreur lors de la recherche d'images." };
   }
 }

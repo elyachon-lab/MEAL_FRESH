@@ -9,6 +9,7 @@ import { assignMeal, removeMeal } from "../app/actions/planning";
 import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
 import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe, mergePlannings, saveLocalPlanning, removeLocalPlanning } from "../lib/storage";
 import { inferCategoryName, getIngredientEmoji } from "../lib/emojis";
+import { getRecipeEmoji } from "../lib/recipe-emojis";
 import RecipeForm from "./RecipeForm";
 
 type Category = { id: string; name: string };
@@ -708,7 +709,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                           >
                             <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, gap: "0.15rem" }}>
                               <span style={{ display: "flex", alignItems: "center", gap: "0.35rem", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                <span>🍲</span>
+                                <span>{getRecipeEmoji(recipe.title)}</span>
                                 <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{recipe.title}</strong>
                               </span>
                               <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.2rem" }}>
@@ -877,7 +878,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                                         title="Cliquer pour voir la liste des ingrédients"
                                       >
                                         <div className="planned-title" style={{ fontWeight: 600 }}>
-                                          🍲 {planned.recipe.title}
+                                          {getRecipeEmoji(planned.recipe.title)} {planned.recipe.title}
                                         </div>
                                         <button
                                           type="button"

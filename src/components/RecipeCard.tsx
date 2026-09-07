@@ -6,6 +6,7 @@ import { format, startOfWeek, addDays } from "date-fns";
 import { deleteRecipe, updateRecipeWithIngredients } from "../app/actions/recipes";
 import { assignMeal } from "../app/actions/planning";
 import { getIngredientEmoji } from "../lib/emojis";
+import RecipeThumbnail from "./RecipeThumbnail";
 
 type Category = { id: string; name: string };
 type RecipeIngredient = {
@@ -17,6 +18,9 @@ type Recipe = {
   title: string;
   urlSource: string | null;
   instructions: string | null;
+  imageUrl?: string | null;
+  imageCreditName?: string | null;
+  imageCreditUrl?: string | null;
   ingredients: RecipeIngredient[];
 };
 
@@ -159,6 +163,15 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   return (
     <div className="card" style={{ padding: "1.25rem", opacity: isPending ? 0.6 : 1, display: "flex", flexDirection: "column", justifyContent: "space-between", maxWidth: "100%", overflow: "hidden" }}>
       <div>
+        <div style={{ marginBottom: "0.85rem" }}>
+          <RecipeThumbnail
+            title={recipe.title}
+            imageUrl={recipe.imageUrl}
+            creditName={recipe.imageCreditName}
+            creditUrl={recipe.imageCreditUrl}
+          />
+        </div>
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", marginBottom: "0.75rem" }}>
           <h3 style={{ margin: 0, fontSize: "1.1rem", wordBreak: "break-word" }}>{recipe.title}</h3>
           <div style={{ display: "flex", gap: "0.35rem", flexShrink: 0 }}>
