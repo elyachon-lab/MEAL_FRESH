@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useTransition, useMemo } from "react";
+import React, { useState, useEffect, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { format, startOfWeek, addDays, addWeeks } from "date-fns";
 import { fr } from "date-fns/locale";
-import { assignMeal, getWeeklyPlanning, removeMeal } from "../app/actions/planning";
+import { assignMeal, removeMeal } from "../app/actions/planning";
 import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
+import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe, mergePlannings, saveLocalPlanning, removeLocalPlanning } from "../lib/storage";
 import { inferCategoryName, getIngredientEmoji } from "../lib/emojis";
 import RecipeForm from "./RecipeForm";
 
@@ -52,13 +53,135 @@ const CATEGORY_EMOJIS: Record<string, string> = {
   "Épices & Condiments": "🌿",
 };
 
-function getFormattedDateKey(d: Date | string): string {
-  // Une date déjà au format yyyy-MM-dd est renvoyée telle quelle : la
-  // reconvertir via new Date() la ferait basculer d'un jour selon le fuseau.
-  if (typeof d === "string") {
-    const match = d.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (match) return match[1];
+const SAMPLE_PRESET_RECIPES = [
+  {
+    title: "Crème choco",
+    instructions: "Faire fondre le chocolat noir dans le lait de soja chaud avec le sucre et la fécule de maïs. Remuer jusqu'à épaississement puis verser dans des ramequins.",
+    ingredients: [
+      { name: "Chocolat noir", categoryId: "Sucré", categoryName: "Sucré", quantity: "200g" },
+      { name: "Lait soja", categoryId: "Produits Laitiers", categoryName: "Produits Laitiers", quantity: "50cl" },
+      { name: "Sucre", categoryId: "Sucré", categoryName: "Sucré", quantity: "50g" },
+      { name: "Fécule de maïs", categoryId: "Glucides", categoryName: "Glucides", quantity: "30g" },
+    ]
+  },
+  {
+    title: "Dahl lentilles corail",
+    instructions: "Faire revenir l'oignon et le curry. Ajouter les lentilles corail, le lait de coco et du bouillon. Laisser mijoter 20 min et servir avec du riz.",
+    ingredients: [
+      { name: "Riz basmati", categoryId: "Glucides", categoryName: "Glucides", quantity: "200g" },
+      { name: "Oignon", categoryId: "Légumes", categoryName: "Légumes", quantity: "1" },
+      { name: "Lentilles corail", categoryId: "Protéines", categoryName: "Protéines", quantity: "250g" },
+      { name: "Curry", categoryId: "Épices & Condiments", categoryName: "Épices & Condiments", quantity: "1 c.à.s" },
+      { name: "Lait de coco", categoryId: "Produits Laitiers", categoryName: "Produits Laitiers", quantity: "20cl" },
+    ]
+  },
+  {
+    title: "Pâtes courgette curry coco",
+    instructions: "Cuire les pâtes. Faire revenir les courgettes en dés avec le curry puis ajouter le lait de coco. Mélanger aux pâtes.",
+    ingredients: [
+      { name: "Pâtes penne", categoryId: "Glucides", categoryName: "Glucides", quantity: "250g" },
+      { name: "Courgette", categoryId: "Légumes", categoryName: "Légumes", quantity: "2" },
+      { name: "Curry", categoryId: "Épices & Condiments", categoryName: "Épices & Condiments", quantity: "1 c.à.c" },
+      { name: "Lait de coco", categoryId: "Produits Laitiers", categoryName: "Produits Laitiers", quantity: "20cl" },
+    ]
+  },
+  {
+    title: "Gnocchis au saumon",
+    instructions: "Poêler les gnocchis jusqu'à ce qu'ils soient dorés. Ajouter la crème de soja et le saumon frais coupé en dés.",
+    ingredients: [
+      { name: "Gnocchis", categoryId: "Glucides", categoryName: "Glucides", quantity: "300g" },
+      { name: "Crème soja", categoryId: "Produits Laitiers", categoryName: "Produits Laitiers", quantity: "15cl" },
+      { name: "Saumon frais", categoryId: "Protéines", categoryName: "Protéines", quantity: "200g" },
+    ]
+  },
+  {
+    title: "Pâtes bolognaises végé",
+    instructions: "Faire revenir l'oignon et la carotte émincés. Ajouter le haché végétal et la pulpe de tomate. Servir chaud sur les pâtes.",
+    ingredients: [
+      { name: "Haché végétal", categoryId: "Protéines", categoryName: "Protéines", quantity: "200g" },
+      { name: "Pâtes spaghetti", categoryId: "Glucides", categoryName: "Glucides", quantity: "250g" },
+      { name: "Pulpe tomate", categoryId: "Légumes", categoryName: "Légumes", quantity: "400g" },
+      { name: "Carotte", categoryId: "Légumes", categoryName: "Légumes", quantity: "1" },
+      { name: "Oignon", categoryId: "Légumes", categoryName: "Légumes", quantity: "1" },
+    ]
+  },
+  {
+    title: "Burgers végé faits maison",
+    instructions: "Griller les steaks hachés végétaux et fondre le fromage dessus. Dresser les burgers avec tomate et sauces.",
+    ingredients: [
+      { name: "Pain burger", categoryId: "Glucides", categoryName: "Glucides", quantity: "2" },
+      { name: "Haché végétal", categoryId: "Protéines", categoryName: "Protéines", quantity: "200g" },
+      { name: "Tomate", categoryId: "Légumes", categoryName: "Légumes", quantity: "1" },
+      { name: "Fromage", categoryId: "Produits Laitiers", categoryName: "Produits Laitiers", quantity: "4 tranches" },
+    ]
+  },
+  {
+    title: "Cabillaud au curry & lait de coco",
+    instructions: "Pocher les pavés de cabillaud dans le lait de coco aromatisé au curry. Accompagner de riz blanc.",
+    ingredients: [
+      { name: "Cabillaud", categoryId: "Protéines", categoryName: "Protéines", quantity: "250g" },
+      { name: "Lait de coco", categoryId: "Produits Laitiers", categoryName: "Produits Laitiers", quantity: "20cl" },
+      { name: "Curry", categoryId: "Épices & Condiments", categoryName: "Épices & Condiments", quantity: "1 c.à.s" },
+      { name: "Riz", categoryId: "Glucides", categoryName: "Glucides", quantity: "200g" },
+    ]
+  },
+  {
+    title: "One pot chili PST",
+    instructions: "Réhydrater les PST. Mélanger dans une sauteuse avec le riz, les haricots rouges, le maïs, l'oignon et la pulpe de tomate au paprika.",
+    ingredients: [
+      { name: "Protéines de soja", categoryId: "Protéines", categoryName: "Protéines", quantity: "150g" },
+      { name: "Riz", categoryId: "Glucides", categoryName: "Glucides", quantity: "200g" },
+      { name: "Paprika", categoryId: "Épices & Condiments", categoryName: "Épices & Condiments", quantity: "1 c.à.c" },
+      { name: "Haricots rouges", categoryId: "Légumes", categoryName: "Légumes", quantity: "250g" },
+      { name: "Pulpe tomate", categoryId: "Légumes", categoryName: "Légumes", quantity: "400g" },
+      { name: "Maïs", categoryId: "Légumes", categoryName: "Légumes", quantity: "150g" },
+      { name: "Oignon rouge", categoryId: "Légumes", categoryName: "Légumes", quantity: "1" },
+    ]
+  },
+  {
+    title: "Chakchouka aux œufs",
+    instructions: "Cuire les pommes de terre et oignons au paprika et bouillon. Casser les œufs par-dessus et couvrir jusqu'à cuisson.",
+    ingredients: [
+      { name: "Pommes de terre", categoryId: "Glucides", categoryName: "Glucides", quantity: "300g" },
+      { name: "Oignons", categoryId: "Légumes", categoryName: "Légumes", quantity: "2" },
+      { name: "Œufs", categoryId: "Protéines", categoryName: "Protéines", quantity: "4" },
+      { name: "Paprika", categoryId: "Épices & Condiments", categoryName: "Épices & Condiments", quantity: "1 c.à.c" },
+      { name: "Miel", categoryId: "Sucré", categoryName: "Sucré", quantity: "1 c.à.c" },
+      { name: "Beurre", categoryId: "Matières Grasses", categoryName: "Matières Grasses", quantity: "20g" },
+    ]
+  },
+  {
+    title: "Pâtes carbonara végétales",
+    instructions: "Griller les lardons végé. Mélanger les pâtes chaudes avec la crème soja et ajouter les lardons.",
+    ingredients: [
+      { name: "Lardons végé", categoryId: "Protéines", categoryName: "Protéines", quantity: "150g" },
+      { name: "Crème soja", categoryId: "Produits Laitiers", categoryName: "Produits Laitiers", quantity: "20cl" },
+      { name: "Pâtes", categoryId: "Glucides", categoryName: "Glucides", quantity: "250g" },
+    ]
+  },
+  {
+    title: "Riz sauté aux légumes & œufs",
+    instructions: "Sauter le riz cuit à feu vif avec petits pois et sauce soja. Incorporer les œufs brouillés.",
+    ingredients: [
+      { name: "Riz", categoryId: "Glucides", categoryName: "Glucides", quantity: "250g" },
+      { name: "Sauce soja", categoryId: "Épices & Condiments", categoryName: "Épices & Condiments", quantity: "2 c.à.s" },
+      { name: "Petits pois", categoryId: "Légumes", categoryName: "Légumes", quantity: "100g" },
+      { name: "Œufs", categoryId: "Protéines", categoryName: "Protéines", quantity: "2" },
+    ]
+  },
+  {
+    title: "Bagel jambon concombre",
+    instructions: "Garnir les bagels de tranches de jambon, concombre frais croquant et fromage frais.",
+    ingredients: [
+      { name: "Pain bagel", categoryId: "Glucides", categoryName: "Glucides", quantity: "2" },
+      { name: "Jambon", categoryId: "Protéines", categoryName: "Protéines", quantity: "2 tranches" },
+      { name: "Fromage", categoryId: "Produits Laitiers", categoryName: "Produits Laitiers", quantity: "50g" },
+      { name: "Concombre", categoryId: "Légumes", categoryName: "Légumes", quantity: "1/2" },
+    ]
   }
+];
+
+function getFormattedDateKey(d: Date | string): string {
   const dateObj = typeof d === "string" ? new Date(d) : d;
   const year = dateObj.getFullYear();
   const month = String(dateObj.getMonth() + 1).padStart(2, "0");
@@ -89,6 +212,9 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
+  // Notification de génération aléatoire
+  const [genNotification, setGenNotification] = useState<string | null>(null);
+
   // Modale de détails d'une recette (au clic)
   const [viewingRecipeModal, setViewingRecipeModal] = useState<Recipe | null>(null);
 
@@ -118,38 +244,16 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const startDate = addWeeks(baseStartDate, weekOffset);
   const endDate = addDays(startDate, 6);
 
-  const weekStartKey = getFormattedDateKey(startDate);
+  const syncAfterMutation = () => {
+    setAllRecipes(mergeRecipes(recipes));
+    setLocalPlannings(mergePlannings(plannings));
+  };
 
   useEffect(() => {
     setIsReady(true);
-    setAllRecipes(recipes);
-  }, [recipes]);
-
-  // La semaine en cours arrive déjà rendue par le serveur ; les autres
-  // semaines sont chargées à la demande depuis la base.
-  useEffect(() => {
-    if (weekOffset === 0) {
-      setLocalPlannings(plannings);
-      return;
-    }
-
-    let cancelled = false;
-    getWeeklyPlanning(weekStartKey).then((rows) => {
-      if (!cancelled) setLocalPlannings(rows as PlannedMeal[]);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [weekOffset, weekStartKey, plannings]);
-
-  /** Resynchronise l'affichage sur l'état réel de la base après une écriture. */
-  const syncAfterMutation = useCallback(() => {
-    router.refresh();
-    if (weekOffset !== 0) {
-      getWeeklyPlanning(weekStartKey).then((rows) => setLocalPlannings(rows as PlannedMeal[]));
-    }
-  }, [router, weekOffset, weekStartKey]);
+    setAllRecipes(mergeRecipes(recipes));
+    setLocalPlannings(mergePlannings(plannings));
+  }, [recipes, plannings]);
 
   // Recettes filtrées et triées par catégorie pour la banque de gauche
   const filteredRecipes = useMemo(() => {
@@ -170,6 +274,38 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     });
     return groups;
   }, [allRecipes]);
+
+  // ── GENERER DES RECETTES ALEATOIRES DANS LA BANQUE ──
+  const handleGenerateRandomRecipes = () => {
+    // Mélanger le catalogue de pré-sélection
+    const shuffled = [...SAMPLE_PRESET_RECIPES].sort(() => 0.5 - Math.random());
+    
+    // Sélectionner 5 à 6 recettes qui n'existent pas encore ou ajouter les plus pertinentes
+    const existingTitles = new Set(allRecipes.map(r => r.title.toLowerCase().trim()));
+    const newItems = shuffled.filter(s => !existingTitles.has(s.title.toLowerCase().trim())).slice(0, 6);
+
+    const poolToUse = newItems.length > 0 ? newItems : shuffled.slice(0, 5);
+
+    let countAdded = 0;
+    poolToUse.forEach(item => {
+      saveLocalRecipe({
+        title: item.title,
+        instructions: item.instructions,
+        ingredients: item.ingredients.map(ing => ({
+          name: ing.name,
+          categoryId: ing.categoryId,
+          categoryName: ing.categoryName,
+          quantity: ing.quantity,
+        })),
+        categories: categories,
+      });
+      countAdded++;
+    });
+
+    setAllRecipes(mergeRecipes(recipes));
+    setGenNotification(`🎉 ${countAdded} recettes aléatoires ajoutées à votre banque !`);
+    setTimeout(() => setGenNotification(null), 4000);
+  };
 
   // ── CALCUL DE LA LISTE DE COURSES AUTOMATIQUE DE LA SEMAINE ──
   const weeklyPlannedMeals = useMemo(() => {
@@ -243,6 +379,14 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const handleSaveEditRecipe = () => {
     if (!editingRecipe || !editTitle.trim()) return;
 
+    saveLocalRecipe({
+      id: editingRecipe.id,
+      title: editTitle.trim(),
+      urlSource: editUrl.trim(),
+      instructions: editInstructions.trim(),
+      ingredients: editIngredients,
+    });
+
     startTransition(async () => {
       await updateRecipeWithIngredients({
         id: editingRecipe.id,
@@ -252,15 +396,18 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         ingredients: editIngredients,
       });
       setEditingRecipe(null);
+      syncAfterMutation();
       router.refresh();
     });
   };
 
   const handleDeleteBankRecipe = (id: string) => {
+    deleteLocalRecipe(id);
     startTransition(async () => {
       await deleteRecipe(id);
       if (editingRecipe?.id === id) setEditingRecipe(null);
       syncAfterMutation();
+      router.refresh();
     });
   };
 
@@ -285,7 +432,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
       if (!recipeToAssign) return;
 
-      // Carte provisoire, remplacée par la ligne renvoyée par la base.
       const tempId = `temp_${Date.now()}`;
       const newMeal: PlannedMeal = {
         id: tempId,
@@ -315,7 +461,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           ]);
           router.refresh();
         } else {
-          // Doublon refusé par la base, ou échec : l'état serveur fait foi.
           syncAfterMutation();
         }
       });
@@ -419,16 +564,36 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
               <h2>📖 Banque de Recettes</h2>
               <span className="badge">{allRecipes.length} disponible{allRecipes.length > 1 ? "s" : ""}</span>
             </div>
-            
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => { setShowFormModal(!showFormModal); setEditingRecipe(null); }}
-              style={{ marginTop: "0.4rem" }}
-            >
-              {showFormModal ? "✕ Fermer" : "➕ Créer une recette"}
-            </button>
+
+            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+              {/* ── BOUTON : GENERER DES RECETTES ALEATOIRES ── */}
+              <button
+                type="button"
+                className="btn btn-accent btn-sm"
+                onClick={handleGenerateRandomRecipes}
+                style={{ marginTop: "0.4rem", fontWeight: 700 }}
+                title="Générer des recettes aléatoires pour remplir la banque"
+              >
+                🎲 Recettes Aléatoires
+              </button>
+              
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => { setShowFormModal(!showFormModal); setEditingRecipe(null); }}
+                style={{ marginTop: "0.4rem" }}
+              >
+                {showFormModal ? "✕ Fermer" : "➕ Créer"}
+              </button>
+            </div>
           </div>
+
+          {/* Notification de Génération Aléatoire */}
+          {genNotification && (
+            <div style={{ background: "rgba(121, 216, 128, 0.2)", color: "#276749", padding: "0.6rem 0.85rem", borderRadius: "var(--radius-md)", fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.85rem", border: "1px solid #79D880" }}>
+              {genNotification}
+            </div>
+          )}
 
           {/* ── MENU DÉROULANT DE TRI PAR CATÉGORIE EN HAUT DE LA BANQUE ── */}
           <div className="input-group" style={{ marginBottom: "1rem" }}>
@@ -457,7 +622,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           {showFormModal && (
             <div style={{ background: "var(--bg)", padding: "1rem", borderRadius: "var(--radius-md)", marginBottom: "1rem", border: "1.5px solid var(--primary)" }}>
               <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>➕ Nouvelle Recette</h3>
-              <RecipeForm categories={categories} onSuccess={() => { setShowFormModal(false); router.refresh(); }} />
+              <RecipeForm categories={categories} onSuccess={() => { setShowFormModal(false); syncAfterMutation(); router.refresh(); }} />
             </div>
           )}
 
@@ -502,13 +667,22 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                     <p className="text-muted text-sm" style={{ marginBottom: "0.75rem" }}>
                       Aucune recette dans cette catégorie.
                     </p>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      onClick={() => setSelectedBankCategory("ALL")}
-                    >
-                      Voir toutes les recettes
-                    </button>
+                    <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
+                      <button
+                        type="button"
+                        className="btn btn-accent btn-sm"
+                        onClick={handleGenerateRandomRecipes}
+                      >
+                        🎲 Générer des recettes
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        onClick={() => setSelectedBankCategory("ALL")}
+                      >
+                        Voir tout
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   filteredRecipes.map((recipe, index) => {
