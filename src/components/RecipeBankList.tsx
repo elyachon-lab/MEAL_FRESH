@@ -4,18 +4,28 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { fillMissingRecipeImages } from "../app/actions/recipes";
+import { mergeRecipes } from "../lib/storage";
 import RecipeCard from "./RecipeCard";
 
 const BATCH_SIZE = 10;
 
 export default function RecipeBankList({ initialRecipes, categories }: { initialRecipes: any[]; categories: any[] }) {
-  const [recipes, setRecipes] = useState(initialRecipes);
+  const [recipes, setRecipes] = useState(() => mergeRecipes(initialRecipes));
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    setRecipes(initialRecipes);
+    setRecipes(mergeRecipes(initialRecipes));
+
+    const handleUpdate = () => {
+      setRecipes(mergeRecipes(initialRecipes));
+    };
+
+    window.addEventListener("mealfresh_recipes_updated", handleUpdate);
+    return () => {
+      window.removeEventListener("mealfresh_recipes_updated", handleUpdate);
+    };
   }, [initialRecipes]);
 
   const missing = recipes.filter((r: any) => !r.imageUrl).length;

@@ -76,6 +76,10 @@ export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
       })),
     });
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("mealfresh_recipes_updated"));
+    }
+
     startTransition(async () => {
       try {
         const res = await createRecipeWithIngredients({

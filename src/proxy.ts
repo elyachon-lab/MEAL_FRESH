@@ -48,18 +48,13 @@ async function handle(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet, headers) {
+      setAll(cookiesToSet) {
         for (const { name, value } of cookiesToSet) {
           request.cookies.set(name, value);
         }
         response = NextResponse.next({ request });
         for (const { name, value, options } of cookiesToSet) {
           response.cookies.set(name, value, options);
-        }
-        // Empêche un CDN de mettre en cache une réponse porteuse de Set-Cookie,
-        // ce qui servirait la session d'un utilisateur à un autre.
-        for (const [header, headerValue] of Object.entries(headers ?? {})) {
-          response.headers.set(header, headerValue);
         }
       },
     },
@@ -78,14 +73,24 @@ async function handle(request: NextRequest) {
     redirectUrl.pathname = "/login";
     redirectUrl.search = "";
     if (pathname !== "/") redirectUrl.searchParams.set("redirectTo", pathname);
-    return NextResponse.redirect(redirectUrl);
+
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    response.cookies.getAll().forEach((c) => {
+      redirectResponse.cookies.set(c.name, c.value, c);
+    });
+    return redirectResponse;
   }
 
   if (user && pathname === "/login") {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/";
     redirectUrl.search = "";
-    return NextResponse.redirect(redirectUrl);
+
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    response.cookies.getAll().forEach((c) => {
+      redirectResponse.cookies.set(c.name, c.value, c);
+    });
+    return redirectResponse;
   }
 
   return response;
