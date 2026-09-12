@@ -43,6 +43,8 @@ export async function getWeeklyPlanning(startDate: string | Date) {
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function assignMeal(
   recipeId: string,
   dateInput: string | Date,
@@ -53,11 +55,36 @@ export async function assignMeal(
     const { supabase, user } = await requireSession();
     const date = toDateKey(dateInput);
 
-    if (existingPlanningId) {
+    const isRealUUID = existingPlanningId && UUID_REGEX.test(existingPlanningId);
+
+    if (isRealUUID) {
       const { data, error } = await supabase
         .from("plannings")
         .update({ date, meal_time: mealTime, recipe_id: recipeId })
         .eq("id", existingPlanningId)
+        .select(PLANNING_SELECT)
+        .maybeSingle();
+
+      if (!error && data) {
+        revalidatePath("/");
+        revalidatePath("/planning");
+        return { success: true as const, planning: mapPlanning(data) };
+      }
+    }
+
+    const { data: existingSlot } = await supabase
+      .from("plannings")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("date", date)
+      .eq("meal_time", mealTime)
+      .maybeSingle();
+
+    if (existingSlot?.id) {
+      const { data, error } = await supabase
+        .from("plannings")
+        .update({ recipe_id: recipeId })
+        .eq("id", existingSlot.id)
         .select(PLANNING_SELECT)
         .maybeSingle();
 
@@ -74,8 +101,6 @@ export async function assignMeal(
       .select(PLANNING_SELECT)
       .maybeSingle();
 
-    // 23505 : la contrainte d'unicité a bloqué un second dépôt de la même
-    // carte sur le même créneau — le repas est déjà planifié, rien à faire.
     if (error && error.code !== "23505") throw new Error(error.message);
 
     revalidatePath("/");
@@ -90,8 +115,12 @@ export async function assignMeal(
 export async function removeMeal(planningId: string) {
   try {
     const { supabase } = await requireSession();
-    const { error } = await supabase.from("plannings").delete().eq("id", planningId);
-    if (error) throw new Error(error.message);
+    const isRealUUID = UUID_REGEX.test(planningId);
+
+    if (isRealUUID) {
+      const { error } = await supabase.from("plannings").delete().eq("id", planningId);
+      if (error) throw new Error(error.message);
+    }
 
     revalidatePath("/");
     revalidatePath("/planning");

@@ -270,11 +270,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     getWeeklyPlanning(startKey).then((weeklyMeals) => {
       if (weeklyMeals && Array.isArray(weeklyMeals)) {
         weeklyMeals.forEach((meal) => saveLocalPlanning(meal as PlannedMeal));
-        setLocalPlannings((prev) => {
-          const serverIds = new Set(weeklyMeals.map((m: any) => m.id));
-          const keepLocalOtherWeeks = prev.filter((p) => !serverIds.has(p.id));
-          return [...keepLocalOtherWeeks, ...(weeklyMeals as PlannedMeal[])];
-        });
+        setLocalPlannings(mergePlannings(weeklyMeals as PlannedMeal[]));
       } else {
         setLocalPlannings(mergePlannings(plannings));
       }
@@ -284,19 +280,17 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   useEffect(() => {
     setIsReady(true);
     setAllRecipes(mergeRecipes(recipes));
+    
+    // Charger immédiatement toutes les recettes planifiées locales et serveur
+    setLocalPlannings(mergePlannings(plannings));
+
     const startKey = getFormattedDateKey(startDate);
 
     // Charger les plannings serveur pour la semaine sélectionnée
     getWeeklyPlanning(startKey).then((weeklyMeals) => {
       if (weeklyMeals && Array.isArray(weeklyMeals)) {
         weeklyMeals.forEach((meal) => saveLocalPlanning(meal as PlannedMeal));
-        setLocalPlannings((prev) => {
-          const serverIds = new Set(weeklyMeals.map((m: any) => m.id));
-          const keepLocalOtherWeeks = prev.filter((p) => !serverIds.has(p.id));
-          return [...keepLocalOtherWeeks, ...(weeklyMeals as PlannedMeal[])];
-        });
-      } else {
-        setLocalPlannings(mergePlannings(plannings));
+        setLocalPlannings(mergePlannings(weeklyMeals as PlannedMeal[]));
       }
     });
   }, [recipes, plannings, startDate]);

@@ -122,19 +122,34 @@ export function saveLocalPlannings(plannings: PlannedMeal[]) {
 export function mergePlannings(serverPlannings: PlannedMeal[]): PlannedMeal[] {
   const local = getLocalPlannings();
   const serverIds = new Set(serverPlannings.map((p) => p.id));
-  const uniqueLocal = local.filter((p) => !serverIds.has(p.id));
+  const serverSlotKeys = new Set(
+    serverPlannings.map((p) => `${typeof p.date === "string" ? p.date.slice(0, 10) : p.date}_${p.mealTime}`)
+  );
+
+  const uniqueLocal = local.filter((p) => {
+    if (serverIds.has(p.id)) return false;
+    const dateStr = typeof p.date === "string" ? p.date.slice(0, 10) : p.date;
+    const slotKey = `${dateStr}_${p.mealTime}`;
+    return !serverSlotKeys.has(slotKey);
+  });
+
   return [...serverPlannings, ...uniqueLocal];
 }
 
 export function saveLocalPlanning(meal: PlannedMeal): void {
   const local = getLocalPlannings();
-  const existingIdx = local.findIndex((p) => p.id === meal.id);
-  if (existingIdx >= 0) {
-    local[existingIdx] = meal;
-  } else {
-    local.push(meal);
-  }
-  saveLocalPlannings(local);
+  const mealDateStr = typeof meal.date === "string" ? meal.date.slice(0, 10) : meal.date;
+  const slotKey = `${mealDateStr}_${meal.mealTime}`;
+
+  const filtered = local.filter((p) => {
+    if (p.id === meal.id) return false;
+    const pDateStr = typeof p.date === "string" ? p.date.slice(0, 10) : p.date;
+    const pSlotKey = `${pDateStr}_${p.mealTime}`;
+    return pSlotKey !== slotKey;
+  });
+
+  filtered.push(meal);
+  saveLocalPlannings(filtered);
 }
 
 export function removeLocalPlanning(id: string): void {
