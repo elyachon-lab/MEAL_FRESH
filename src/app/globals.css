@@ -148,9 +148,11 @@ p  { margin-bottom: .75rem; }
   color: var(--text-secondary);
   transition: background .15s, color .15s;
 }
-.nav-link:hover {
+.nav-link:hover,
+.nav-link.active {
   background: var(--primary-light);
   color: var(--primary);
+  font-weight: 700;
 }
 
 /* ================================================================ BUTTONS */
@@ -380,6 +382,11 @@ textarea.input-field { resize: vertical; }
   gap: 2px;
   padding: 6px 0;
   transition: color 0.15s;
+}
+
+.bottom-nav-item.active {
+  color: var(--primary);
+  font-weight: 700;
 }
 
 .bottom-nav-icon {
