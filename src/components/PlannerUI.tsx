@@ -264,9 +264,13 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   const [isPending, startTransition] = useTransition();
 
-  const baseStartDate = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const startDate = addWeeks(baseStartDate, weekOffset);
-  const endDate = addDays(startDate, 6);
+  // Ces dates doivent être mémoïsées : un `new Date()` recréé à chaque rendu
+  // produit une nouvelle référence, ce qui relancerait en boucle l'effet et les
+  // useMemo qui en dépendent (« Maximum update depth exceeded »).
+  const baseStartDate = useMemo(() => startOfWeek(new Date(), { weekStartsOn: 1 }), []);
+  const startDate = useMemo(() => addWeeks(baseStartDate, weekOffset), [baseStartDate, weekOffset]);
+  const endDate = useMemo(() => addDays(startDate, 6), [startDate]);
+  const startKey = useMemo(() => getFormattedDateKey(startDate), [startDate]);
 
   const loadedWeeksRef = useRef<Set<string>>(new Set());
 
@@ -282,8 +286,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     // Charger immédiatement toutes les recettes planifiées locales et serveur (0ms delay)
     setLocalPlannings(mergePlannings(plannings));
 
-    const startKey = getFormattedDateKey(startDate);
-
     if (!loadedWeeksRef.current.has(startKey)) {
       loadedWeeksRef.current.add(startKey);
       getWeeklyPlanning(startKey).then((weeklyMeals) => {
@@ -293,7 +295,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         }
       });
     }
-  }, [startDate]);
+  }, [startKey, recipes, plannings]);
 
   // Recettes filtrées et triées par catégorie pour la banque de gauche
   const filteredRecipes = useMemo(() => {
