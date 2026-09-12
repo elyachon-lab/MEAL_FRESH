@@ -26,28 +26,46 @@ async function resolveIngredientLines(
   userId: string,
   lines: IngredientInput[],
 ) {
-  if (lines.length === 0) return [];
+  if (!lines || lines.length === 0) return [];
 
-  const categories = await listCategories(supabase);
+  let categories: any[] = [];
+  try {
+    categories = await listCategories(supabase);
+  } catch (e) {
+    console.error("listCategories error in resolveIngredientLines:", e);
+  }
+
   const byIngredientId = new Map<string, { ingredient_id: string; quantity: string | null }>();
 
   for (const line of lines) {
     const name = line.name?.trim();
     if (!name) continue;
 
-    const ingredientId = await findOrCreateIngredient(
-      supabase,
-      userId,
-      name,
-      line.categoryId ?? null,
-      categories,
-    );
-    if (!ingredientId) continue;
+    try {
+      const ingredientId = await findOrCreateIngredient(
+        supabase,
+        userId,
+        name,
+        line.categoryId ?? null,
+        categories,
+      );
+      if (!ingredientId) continue;
 
-    byIngredientId.set(ingredientId, {
-      ingredient_id: ingredientId,
-      quantity: line.quantity?.trim() || null,
-    });
+      const qty = line.quantity?.trim() || null;
+      if (byIngredientId.has(ingredientId)) {
+        const existing = byIngredientId.get(ingredientId)!;
+        if (qty) {
+          existing.quantity = existing.quantity ? `${existing.quantity}, ${qty}` : qty;
+        }
+      } else {
+        byIngredientId.set(ingredientId, {
+          ingredient_id: ingredientId,
+          quantity: qty,
+        });
+      }
+    } catch (ingErr: any) {
+      console.error(`Error resolving ingredient "${name}":`, ingErr?.message || ingErr);
+    }
   }
 
   return [...byIngredientId.values()];

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createRecipeWithIngredients } from "../app/actions/recipes";
 import { getIngredientEmoji } from "../lib/emojis";
+import { saveLocalRecipe } from "../lib/storage";
 
 type Category = { id: string; name: string };
 type IngredientInput = { name: string; categoryId: string; quantity: string };
@@ -56,14 +57,27 @@ export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
       return;
     }
 
+    const finalIngredients = [...ingredients];
+    if (ingName.trim()) {
+      const catId = ingCategoryId || categories[0]?.id || "";
+      finalIngredients.push({ name: ingName.trim(), categoryId: catId, quantity: ingQty });
+    }
+
+    // 0ms instant local persistence
+    saveLocalRecipe({
+      title,
+      urlSource,
+      instructions,
+      ingredients: finalIngredients.map((ing) => ({
+        name: ing.name,
+        categoryId: ing.categoryId,
+        categoryName: getCategoryName(ing.categoryId),
+        quantity: ing.quantity,
+      })),
+    });
+
     startTransition(async () => {
       try {
-        const finalIngredients = [...ingredients];
-        if (ingName.trim()) {
-          const catId = ingCategoryId || categories[0]?.id || "";
-          finalIngredients.push({ name: ingName.trim(), categoryId: catId, quantity: ingQty });
-        }
-
         const res = await createRecipeWithIngredients({
           title,
           urlSource,
