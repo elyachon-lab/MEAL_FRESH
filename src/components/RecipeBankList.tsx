@@ -9,21 +9,26 @@ import RecipeCard from "./RecipeCard";
 
 const BATCH_SIZE = 10;
 
+/** Classement alphabétique français : « Éclair » se range avec les E. */
+const byTitle = (a: any, b: any) =>
+  String(a.title).localeCompare(String(b.title), "fr", { sensitivity: "base" });
+
 export default function RecipeBankList({ initialRecipes, categories }: { initialRecipes: any[]; categories: any[] }) {
   // Le premier rendu doit refléter EXACTEMENT le HTML du serveur : lire le
   // localStorage ici provoquerait une erreur d'hydratation dès que le stockage
   // local contient une recette absente du serveur. La fusion a lieu dans
   // l'effet ci-dessous, donc après l'hydratation.
-  const [recipes, setRecipes] = useState<any[]>(initialRecipes);
+  const [recipes, setRecipes] = useState<any[]>(() => [...initialRecipes].sort(byTitle));
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    setRecipes(mergeRecipes(initialRecipes));
+    const sync = () => setRecipes(mergeRecipes(initialRecipes).sort(byTitle));
+    sync();
 
     const handleUpdate = () => {
-      setRecipes(mergeRecipes(initialRecipes));
+      sync();
     };
 
     window.addEventListener(RECIPES_UPDATED_EVENT, handleUpdate);
