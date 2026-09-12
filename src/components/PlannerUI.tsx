@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useMemo } from "react";
+import React, { useState, useEffect, useTransition, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { format, startOfWeek, addDays, addWeeks } from "date-fns";
@@ -268,36 +268,32 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   const startDate = addWeeks(baseStartDate, weekOffset);
   const endDate = addDays(startDate, 6);
 
+  const loadedWeeksRef = useRef<Set<string>>(new Set());
+
   const syncAfterMutation = () => {
     setAllRecipes(mergeRecipes(recipes));
-    const startKey = getFormattedDateKey(startDate);
-    getWeeklyPlanning(startKey).then((weeklyMeals) => {
-      if (weeklyMeals && Array.isArray(weeklyMeals)) {
-        weeklyMeals.forEach((meal) => saveLocalPlanning(meal as PlannedMeal));
-        setLocalPlannings(mergePlannings(weeklyMeals as PlannedMeal[]));
-      } else {
-        setLocalPlannings(mergePlannings(plannings));
-      }
-    });
+    setLocalPlannings(mergePlannings(plannings));
   };
 
   useEffect(() => {
     setIsReady(true);
     setAllRecipes(mergeRecipes(recipes));
     
-    // Charger immédiatement toutes les recettes planifiées locales et serveur
+    // Charger immédiatement toutes les recettes planifiées locales et serveur (0ms delay)
     setLocalPlannings(mergePlannings(plannings));
 
     const startKey = getFormattedDateKey(startDate);
 
-    // Charger les plannings serveur pour la semaine sélectionnée
-    getWeeklyPlanning(startKey).then((weeklyMeals) => {
-      if (weeklyMeals && Array.isArray(weeklyMeals)) {
-        weeklyMeals.forEach((meal) => saveLocalPlanning(meal as PlannedMeal));
-        setLocalPlannings(mergePlannings(weeklyMeals as PlannedMeal[]));
-      }
-    });
-  }, [recipes, plannings, startDate]);
+    if (!loadedWeeksRef.current.has(startKey)) {
+      loadedWeeksRef.current.add(startKey);
+      getWeeklyPlanning(startKey).then((weeklyMeals) => {
+        if (weeklyMeals && Array.isArray(weeklyMeals)) {
+          weeklyMeals.forEach((meal) => saveLocalPlanning(meal as PlannedMeal));
+          setLocalPlannings(mergePlannings(weeklyMeals as PlannedMeal[]));
+        }
+      });
+    }
+  }, [startDate]);
 
   // Recettes filtrées et triées par catégorie pour la banque de gauche
   const filteredRecipes = useMemo(() => {
@@ -512,9 +508,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           ...prev.filter(p => p.id !== tempId && p.id !== saved.id),
           saved,
         ]);
-        router.refresh();
-      } else {
-        syncAfterMutation();
       }
     });
   };
@@ -552,7 +545,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         ? `✨ Recette "${recipeToAssign.title}" déplacée sur ${dayName} (${mealTime}) !`
         : `🎯 Recette "${recipeToAssign.title}" ajoutée sur ${dayName} (${mealTime}) !`
     );
-    setTimeout(() => setGenNotification(null), 4000);
+    setTimeout(() => setGenNotification(null), 3000);
     setSelectedForAssign(null);
 
     startTransition(async () => {
@@ -572,9 +565,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           ...prev.filter((p) => p.id !== tempId && p.id !== sourcePlanningId && p.id !== saved.id),
           saved,
         ]);
-        router.refresh();
-      } else {
-        syncAfterMutation();
       }
     });
   };
@@ -638,9 +628,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
             ...prev.filter(p => p.id !== tempId && p.id !== rawPlanningId && p.id !== saved.id),
             saved,
           ]);
-          router.refresh();
-        } else {
-          syncAfterMutation();
         }
       });
     } else {
@@ -650,7 +637,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
         startTransition(async () => {
           await removeMeal(rawPlanningId);
-          syncAfterMutation();
         });
       }
     }
@@ -665,7 +651,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         setLocalPlannings(prev => prev.filter(p => p.id !== currentPlanningId));
         startTransition(async () => {
           await removeMeal(currentPlanningId);
-          syncAfterMutation();
         });
       }
       return;
@@ -702,9 +687,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           ...prev.filter(p => p.id !== tempId && p.id !== currentPlanningId && p.id !== saved.id),
           saved,
         ]);
-        router.refresh();
-      } else {
-        syncAfterMutation();
       }
     });
   };
@@ -714,7 +696,6 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     setLocalPlannings(prev => prev.filter(p => p.id !== planningId));
     startTransition(async () => {
       await removeMeal(planningId);
-      syncAfterMutation();
     });
   };
 
