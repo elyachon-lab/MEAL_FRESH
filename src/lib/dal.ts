@@ -23,6 +23,14 @@ export async function getUser() {
   return user;
 }
 
+export function isRedirectError(err: any): boolean {
+  if (!err) return false;
+  if (typeof err === "object" && "digest" in err && typeof err.digest === "string") {
+    return err.digest.startsWith("NEXT_REDIRECT");
+  }
+  return err?.message === "NEXT_REDIRECT" || err?.name === "NextRedirect";
+}
+
 /**
  * Session garantie : redirige vers /login si personne n'est connecté.
  * À appeler dans toute action ou page qui touche aux données.

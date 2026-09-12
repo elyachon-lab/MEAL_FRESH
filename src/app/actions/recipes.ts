@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireSession } from "@/lib/dal";
+import { requireSession, isRedirectError } from "@/lib/dal";
 import { findOrCreateIngredient, listCategories } from "@/lib/ingredients";
 import { RECIPE_SELECT, mapRecipe } from "@/lib/mappers";
 import { findRecipePhoto } from "@/lib/recipe-photos";
@@ -72,19 +72,25 @@ async function resolveIngredientLines(
 }
 
 export async function getRecipes() {
-  const { supabase } = await requireSession();
+  try {
+    const { supabase } = await requireSession();
 
-  const { data, error } = await supabase
-    .from("recipes")
-    .select(RECIPE_SELECT)
-    .order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("recipes")
+      .select(RECIPE_SELECT)
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    console.error("getRecipes:", error.message);
+    if (error) {
+      console.error("getRecipes:", error.message);
+      return [];
+    }
+
+    return (data ?? []).map(mapRecipe);
+  } catch (err: any) {
+    if (isRedirectError(err)) throw err;
+    console.error("getRecipes:", err?.message ?? err);
     return [];
   }
-
-  return (data ?? []).map(mapRecipe);
 }
 
 export async function createRecipeWithIngredients(data: {
@@ -124,6 +130,7 @@ export async function createRecipeWithIngredients(data: {
     refreshRecipeViews();
     return { success: true as const, id: created.data.id };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("createRecipeWithIngredients:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de la sauvegarde de la recette." };
   }
@@ -172,6 +179,7 @@ export async function updateRecipeWithIngredients(data: {
     refreshRecipeViews();
     return { success: true as const };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("updateRecipeWithIngredients:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de la mise à jour." };
   }
@@ -186,6 +194,7 @@ export async function deleteRecipe(id: string) {
     refreshRecipeViews();
     return { success: true as const };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("deleteRecipe:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de la suppression." };
   }
@@ -258,6 +267,7 @@ export async function fillMissingRecipeImages(batchSize: number = 10) {
       remaining: count ?? 0,
     };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("fillMissingRecipeImages:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de la recherche d'images." };
   }

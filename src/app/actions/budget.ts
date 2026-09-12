@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireSession } from "@/lib/dal";
+import { requireSession, isRedirectError } from "@/lib/dal";
 import { mapExpense, toDateKey } from "@/lib/mappers";
 
 const DEFAULT_BUDGET = 400;
@@ -65,6 +65,7 @@ export async function getMonthlyBudget(monthStr: string) {
 
     return { id: row.id, month: row.month, amount: Number(row.amount), expenses };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("getMonthlyBudget:", err?.message ?? err);
     return empty;
   }
@@ -91,6 +92,7 @@ export async function updateBudgetAmount(monthStr: string, newAmount: number) {
     revalidatePath("/budget");
     return { success: true as const };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("updateBudgetAmount:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur de mise à jour du budget." };
   }
@@ -131,6 +133,7 @@ export async function addExpense(data: {
     revalidatePath("/budget");
     return { success: true as const, expense: mapExpense(created) };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("addExpense:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de l'ajout de la dépense." };
   }
@@ -168,6 +171,7 @@ export async function updateExpense(data: {
     revalidatePath("/budget");
     return { success: true as const, expense: mapExpense(updated) };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("updateExpense:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de la modification de la dépense." };
   }
@@ -182,6 +186,7 @@ export async function deleteExpense(expenseId: string) {
     revalidatePath("/budget");
     return { success: true as const };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("deleteExpense:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de la suppression." };
   }

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { addDays } from "date-fns";
 
-import { requireSession } from "@/lib/dal";
+import { requireSession, isRedirectError } from "@/lib/dal";
 import { RECIPE_SELECT, mapPlanning, mapRecipe, toDateKey } from "@/lib/mappers";
 
 export type MealTime = "Matin" | "Midi" | "Goûter" | "Soir";
@@ -38,6 +38,7 @@ export async function getWeeklyPlanning(startDate: string | Date) {
         recipe: mapRecipe(row.recipe),
       }));
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("getWeeklyPlanning:", err?.message ?? err);
     return [];
   }
@@ -107,6 +108,7 @@ export async function assignMeal(
     revalidatePath("/planning");
     return { success: true as const, planning: data ? mapPlanning(data) : null };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("assignMeal:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de l'assignation du repas." };
   }
@@ -126,6 +128,7 @@ export async function removeMeal(planningId: string) {
     revalidatePath("/planning");
     return { success: true as const };
   } catch (err: any) {
+    if (isRedirectError(err)) throw err;
     console.error("removeMeal:", err?.message ?? err);
     return { success: false as const, error: err?.message || "Erreur lors de la suppression." };
   }
