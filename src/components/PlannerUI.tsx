@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { format, startOfWeek, addDays, addWeeks } from "date-fns";
 import { fr } from "date-fns/locale";
-import { assignMeal, removeMeal } from "../app/actions/planning";
+import { assignMeal, removeMeal, getWeeklyPlanning } from "../app/actions/planning";
 import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
 import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe, mergePlannings, saveLocalPlanning, removeLocalPlanning } from "../lib/storage";
 import { inferCategoryName, getIngredientEmoji } from "../lib/emojis";
@@ -183,10 +183,19 @@ const SAMPLE_PRESET_RECIPES = [
 ];
 
 function getFormattedDateKey(d: Date | string): string {
-  const dateObj = typeof d === "string" ? new Date(d) : d;
-  const year = dateObj.getFullYear();
-  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
-  const day = String(dateObj.getDate()).padStart(2, "0");
+  if (typeof d === "string") {
+    if (d.includes("T")) {
+      const dateObj = new Date(d);
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const day = String(dateObj.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    return d.slice(0, 10);
+  }
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -219,6 +228,16 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   // Modale de détails d'une recette (au clic)
   const [viewingRecipeModal, setViewingRecipeModal] = useState<Recipe | null>(null);
 
+  // État de sélection / surveillance pour le placement ou déplacement au clic
+  type SelectedForAssign = {
+    recipe: Recipe;
+    sourcePlanningId?: string;
+    sourceDayName?: string;
+    sourceMealTime?: string;
+  } | null;
+
+  const [selectedForAssign, setSelectedForAssign] = useState<SelectedForAssign>(null);
+
   // État des éléments cochés dans la liste de courses de la semaine
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({});
   const [copiedNotification, setCopiedNotification] = useState(false);
@@ -247,14 +266,40 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   const syncAfterMutation = () => {
     setAllRecipes(mergeRecipes(recipes));
-    setLocalPlannings(mergePlannings(plannings));
+    const startKey = getFormattedDateKey(startDate);
+    getWeeklyPlanning(startKey).then((weeklyMeals) => {
+      if (weeklyMeals && Array.isArray(weeklyMeals)) {
+        weeklyMeals.forEach((meal) => saveLocalPlanning(meal as PlannedMeal));
+        setLocalPlannings((prev) => {
+          const serverIds = new Set(weeklyMeals.map((m: any) => m.id));
+          const keepLocalOtherWeeks = prev.filter((p) => !serverIds.has(p.id));
+          return [...keepLocalOtherWeeks, ...(weeklyMeals as PlannedMeal[])];
+        });
+      } else {
+        setLocalPlannings(mergePlannings(plannings));
+      }
+    });
   };
 
   useEffect(() => {
     setIsReady(true);
     setAllRecipes(mergeRecipes(recipes));
-    setLocalPlannings(mergePlannings(plannings));
-  }, [recipes, plannings]);
+    const startKey = getFormattedDateKey(startDate);
+
+    // Charger les plannings serveur pour la semaine sélectionnée
+    getWeeklyPlanning(startKey).then((weeklyMeals) => {
+      if (weeklyMeals && Array.isArray(weeklyMeals)) {
+        weeklyMeals.forEach((meal) => saveLocalPlanning(meal as PlannedMeal));
+        setLocalPlannings((prev) => {
+          const serverIds = new Set(weeklyMeals.map((m: any) => m.id));
+          const keepLocalOtherWeeks = prev.filter((p) => !serverIds.has(p.id));
+          return [...keepLocalOtherWeeks, ...(weeklyMeals as PlannedMeal[])];
+        });
+      } else {
+        setLocalPlannings(mergePlannings(plannings));
+      }
+    });
+  }, [recipes, plannings, startDate]);
 
   // Recettes filtrées et triées par catégorie pour la banque de gauche
   const filteredRecipes = useMemo(() => {
@@ -412,6 +457,66 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     });
   };
 
+  // ── PLACEMENT OU DEPLACEMENT D'UNE RECETTE AU CLIC (MODE SURVEILLANCE) ──
+  const handlePlaceSelectedMeal = (dayIndex: number, mealTime: MealKey) => {
+    if (!selectedForAssign) return;
+
+    const dateKey = getFormattedDateKey(addDays(startDate, dayIndex));
+    const recipeToAssign = selectedForAssign.recipe;
+    const sourcePlanningId = selectedForAssign.sourcePlanningId;
+
+    const tempId = `temp_${Date.now()}`;
+    const newMeal: PlannedMeal = {
+      id: tempId,
+      recipe: recipeToAssign,
+      date: dateKey,
+      mealTime,
+    };
+
+    if (sourcePlanningId) {
+      removeLocalPlanning(sourcePlanningId);
+    }
+    saveLocalPlanning(newMeal);
+
+    setLocalPlannings((prev) => [
+      ...prev.filter((p) => p.id !== sourcePlanningId && p.id !== tempId),
+      newMeal,
+    ]);
+
+    const dayName = DAYS[dayIndex];
+    const isMove = !!sourcePlanningId;
+    setGenNotification(
+      isMove
+        ? `✨ Recette "${recipeToAssign.title}" déplacée sur ${dayName} (${mealTime}) !`
+        : `🎯 Recette "${recipeToAssign.title}" ajoutée sur ${dayName} (${mealTime}) !`
+    );
+    setTimeout(() => setGenNotification(null), 4000);
+    setSelectedForAssign(null);
+
+    startTransition(async () => {
+      const res = sourcePlanningId
+        ? await assignMeal(recipeToAssign.id, dateKey, mealTime, sourcePlanningId)
+        : await assignMeal(recipeToAssign.id, dateKey, mealTime);
+
+      if (res?.success && res.planning) {
+        const saved = res.planning as PlannedMeal;
+        removeLocalPlanning(tempId);
+        if (sourcePlanningId && sourcePlanningId !== saved.id) {
+          removeLocalPlanning(sourcePlanningId);
+        }
+        saveLocalPlanning(saved);
+
+        setLocalPlannings((prev) => [
+          ...prev.filter((p) => p.id !== tempId && p.id !== sourcePlanningId && p.id !== saved.id),
+          saved,
+        ]);
+        router.refresh();
+      } else {
+        syncAfterMutation();
+      }
+    });
+  };
+
   const onDragEnd = (result: DropResult) => {
     const { source, destination, draggableId } = result;
 
@@ -441,6 +546,11 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
         mealTime,
       };
 
+      if (rawPlanningId) {
+        removeLocalPlanning(rawPlanningId);
+      }
+      saveLocalPlanning(newMeal);
+
       setLocalPlannings(prev => [
         ...prev.filter(p => p.id !== rawPlanningId && p.id !== tempId),
         newMeal,
@@ -456,6 +566,12 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
         if (res?.success && res.planning) {
           const saved = res.planning as PlannedMeal;
+          removeLocalPlanning(tempId);
+          if (rawPlanningId && rawPlanningId !== saved.id) {
+            removeLocalPlanning(rawPlanningId);
+          }
+          saveLocalPlanning(saved);
+
           setLocalPlannings(prev => [
             ...prev.filter(p => p.id !== tempId && p.id !== rawPlanningId && p.id !== saved.id),
             saved,
@@ -467,6 +583,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
       });
     } else {
       if (!isFromBank && rawPlanningId) {
+        removeLocalPlanning(rawPlanningId);
         setLocalPlannings(prev => prev.filter(p => p.id !== rawPlanningId));
 
         startTransition(async () => {
@@ -482,6 +599,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
     if (!recipeId) {
       if (currentPlanningId) {
+        removeLocalPlanning(currentPlanningId);
         setLocalPlannings(prev => prev.filter(p => p.id !== currentPlanningId));
         startTransition(async () => {
           await removeMeal(currentPlanningId);
@@ -497,6 +615,11 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     const tempId = `temp_${Date.now()}`;
     const newMeal: PlannedMeal = { id: tempId, recipe, date: dateKey, mealTime };
 
+    if (currentPlanningId) {
+      removeLocalPlanning(currentPlanningId);
+    }
+    saveLocalPlanning(newMeal);
+
     setLocalPlannings(prev => [
       ...prev.filter(p => p.id !== currentPlanningId && p.id !== tempId),
       newMeal,
@@ -507,6 +630,12 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
       if (res.success && res.planning) {
         const saved = res.planning as PlannedMeal;
+        removeLocalPlanning(tempId);
+        if (currentPlanningId && currentPlanningId !== saved.id) {
+          removeLocalPlanning(currentPlanningId);
+        }
+        saveLocalPlanning(saved);
+
         setLocalPlannings(prev => [
           ...prev.filter(p => p.id !== tempId && p.id !== currentPlanningId && p.id !== saved.id),
           saved,
@@ -519,6 +648,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
   };
 
   const handleRemoveMeal = (planningId: string) => {
+    removeLocalPlanning(planningId);
     setLocalPlannings(prev => prev.filter(p => p.id !== planningId));
     startTransition(async () => {
       await removeMeal(planningId);
@@ -717,18 +847,37 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                               </span>
                             </div>
 
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              style={{ padding: "0.2rem 0.4rem", fontSize: "0.85rem" }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                startEditRecipe(recipe);
-                              }}
-                              title="Modifier la recette"
-                            >
-                              ✏️
-                            </button>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                              <button
+                                type="button"
+                                className={`btn btn-sm ${selectedForAssign?.recipe.id === recipe.id && !selectedForAssign.sourcePlanningId ? 'btn-primary' : 'btn-outline'}`}
+                                style={{ padding: "0.15rem 0.45rem", fontSize: "0.75rem", fontWeight: 700 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (selectedForAssign?.recipe.id === recipe.id && !selectedForAssign.sourcePlanningId) {
+                                    setSelectedForAssign(null);
+                                  } else {
+                                    setSelectedForAssign({ recipe });
+                                  }
+                                }}
+                                title="Cliquer pour passer en mode placement, puis cliquer sur un créneau du semainier"
+                              >
+                                {selectedForAssign?.recipe.id === recipe.id && !selectedForAssign.sourcePlanningId ? "🎯 Actif" : "📌 Placer"}
+                              </button>
+
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ padding: "0.2rem 0.4rem", fontSize: "0.85rem" }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEditRecipe(recipe);
+                                }}
+                                title="Modifier la recette"
+                              >
+                                ✏️
+                              </button>
+                            </div>
                           </div>
                         )}
                       </Draggable>
@@ -743,6 +892,35 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
         {/* Semainier (Destinations) */}
         <div className="card planner-grid-card">
+          {/* BANNIÈRE MODE PLACEMENT / SURVEILLANCE */}
+          {selectedForAssign && (
+            <div className="surveillance-banner">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "1.4rem" }}>🎯</span>
+                <div>
+                  <strong style={{ fontSize: "0.95rem" }}>Mode Placement Actif :</strong>{" "}
+                  <span style={{ textDecoration: "underline", fontWeight: 700 }}>{selectedForAssign.recipe.title}</span>
+                  {selectedForAssign.sourcePlanningId && (
+                    <span style={{ fontSize: "0.85rem", opacity: 0.9, marginLeft: "0.5rem" }}>
+                      (Provenant de {selectedForAssign.sourceDayName} {selectedForAssign.sourceMealTime} — Mode Déplacement)
+                    </span>
+                  )}
+                  <div style={{ fontSize: "0.825rem", opacity: 0.95, marginTop: "0.2rem" }}>
+                    👇 Cliquez sur n'importe quel créneau (Matin, Midi, Goûter ou Soir) ci-dessous pour y {selectedForAssign.sourcePlanningId ? "déplacer" : "déposer"} cette recette.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                style={{ color: "#ffffff", borderColor: "#ffffff", fontWeight: 700, marginLeft: "auto" }}
+                onClick={() => setSelectedForAssign(null)}
+              >
+                ✕ Annuler
+              </button>
+            </div>
+          )}
+
           <div className="planner-header">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
               <div>
@@ -854,13 +1032,19 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                           <div
                             ref={provided.innerRef}
                             {...provided.droppableProps}
-                            className={`meal-slot ${snapshot.isDraggingOver ? 'slot-hover' : ''}`}
+                            className={`meal-slot ${snapshot.isDraggingOver ? 'slot-hover' : ''} ${selectedForAssign ? 'slot-surveillance-active' : ''}`}
+                            onClick={() => {
+                              if (selectedForAssign) {
+                                handlePlaceSelectedMeal(dayIndex, m.key);
+                              }
+                            }}
                             style={{
                               background: snapshot.isDraggingOver ? "var(--primary-light)" : "var(--surface-hover)",
                               borderRadius: "var(--radius-md)",
                               minHeight: "56px",
                               padding: "0.35rem",
-                              transition: "background 0.2s ease, border-color 0.2s ease"
+                              transition: "background 0.2s ease, border-color 0.2s ease",
+                              position: "relative"
                             }}
                           >
                             {plannedMeals.length > 0 ? (
@@ -872,29 +1056,65 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                                         ref={provided.innerRef}
                                         {...provided.draggableProps}
                                         {...provided.dragHandleProps}
-                                        className={`planned-item ${snapshot.isDragging ? 'is-dragging' : ''}`}
-                                        onClick={() => setViewingRecipeModal(planned.recipe)}
+                                        className={`planned-item ${snapshot.isDragging ? 'is-dragging' : ''} ${selectedForAssign?.sourcePlanningId === planned.id ? 'selected-for-assign' : ''}`}
+                                        onClick={(e) => {
+                                          if (selectedForAssign) {
+                                            e.stopPropagation();
+                                            handlePlaceSelectedMeal(dayIndex, m.key);
+                                          } else {
+                                            setViewingRecipeModal(planned.recipe);
+                                          }
+                                        }}
                                         style={{ ...provided.draggableProps.style, cursor: "pointer" }}
-                                        title="Cliquer pour voir la liste des ingrédients"
+                                        title="Cliquer pour voir les ingrédients ou utiliser ⇄ pour déplacer"
                                       >
                                         <div className="planned-title" style={{ fontWeight: 600 }}>
                                           {getRecipeEmoji(planned.recipe.title)} {planned.recipe.title}
                                         </div>
-                                        <button
-                                          type="button"
-                                          className="remove-btn"
-                                          title="Retirer du planning"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleRemoveMeal(planned.id);
-                                          }}
-                                        >
-                                          ✕
-                                        </button>
+
+                                        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                          <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            style={{ padding: "0.1rem 0.3rem", fontSize: "0.75rem", height: "auto" }}
+                                            title="Déplacer cette recette au clic vers un autre créneau"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (selectedForAssign?.sourcePlanningId === planned.id) {
+                                                setSelectedForAssign(null);
+                                              } else {
+                                                setSelectedForAssign({
+                                                  recipe: planned.recipe,
+                                                  sourcePlanningId: planned.id,
+                                                  sourceDayName: dayName,
+                                                  sourceMealTime: m.key
+                                                });
+                                              }
+                                            }}
+                                          >
+                                            {selectedForAssign?.sourcePlanningId === planned.id ? "🎯" : "⇄"}
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            className="remove-btn"
+                                            title="Retirer du planning"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleRemoveMeal(planned.id);
+                                            }}
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
                                       </div>
                                     )}
                                   </Draggable>
                                 ))}
+                              </div>
+                            ) : selectedForAssign ? (
+                              <div style={{ fontSize: "0.75rem", color: "var(--primary-dark)", fontWeight: 700, textAlign: "center", paddingTop: "0.5rem", userSelect: "none" }}>
+                                + Placer ici
                               </div>
                             ) : null}
                             {provided.placeholder}
@@ -933,12 +1153,38 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                       const primaryPlanned = plannedMeals[0];
 
                       return (
-                        <div key={m.key} className="mobile-meal-slot-box" style={{ background: "var(--surface-hover)", borderRadius: "var(--radius-md)", padding: "0.75rem" }}>
+                        <div
+                          key={m.key}
+                          className={`mobile-meal-slot-box ${selectedForAssign ? 'slot-surveillance-active' : ''}`}
+                          style={{
+                            background: "var(--surface-hover)",
+                            borderRadius: "var(--radius-md)",
+                            padding: "0.75rem",
+                            border: selectedForAssign ? "2px dashed #276749" : "1px solid var(--border)"
+                          }}
+                          onClick={() => {
+                            if (selectedForAssign) {
+                              handlePlaceSelectedMeal(dayIndex, m.key);
+                            }
+                          }}
+                        >
                           <div className="mobile-meal-slot-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>
                               <span>{m.icon}</span> <strong>{m.label}</strong>
                             </div>
-                            {primaryPlanned && (
+                            {selectedForAssign ? (
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                style={{ padding: "0.15rem 0.5rem", fontSize: "0.75rem", fontWeight: 700 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePlaceSelectedMeal(dayIndex, m.key);
+                                }}
+                              >
+                                🎯 Placer ici
+                              </button>
+                            ) : primaryPlanned ? (
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm"
@@ -947,7 +1193,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                               >
                                 👁️ Voir ingrédients
                               </button>
-                            )}
+                            ) : null}
                           </div>
 
                           <div className="mobile-meal-slot-select-wrapper">

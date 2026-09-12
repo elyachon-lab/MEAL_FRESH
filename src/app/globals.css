@@ -529,6 +529,44 @@ textarea.input-field { resize: vertical; }
   border-color: var(--primary);
 }
 
+/* Mode Surveillance & Placement au clic */
+.surveillance-banner {
+  background: linear-gradient(135deg, #276749 0%, #1a4731 100%);
+  color: #ffffff;
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 14px rgba(39, 103, 73, 0.3);
+  animation: pulseSurveillance 2.5s infinite ease-in-out;
+  border: 1px solid #79D880;
+}
+
+@keyframes pulseSurveillance {
+  0% { box-shadow: 0 4px 14px rgba(39, 103, 73, 0.3); }
+  50% { box-shadow: 0 6px 20px rgba(39, 103, 73, 0.55); }
+  100% { box-shadow: 0 4px 14px rgba(39, 103, 73, 0.3); }
+}
+
+.meal-slot.slot-surveillance-active {
+  border: 2px dashed #276749 !important;
+  background: rgba(121, 216, 128, 0.15) !important;
+  cursor: pointer !important;
+}
+
+.meal-slot.slot-surveillance-active:hover {
+  background: rgba(121, 216, 128, 0.35) !important;
+  border-color: #1a4731 !important;
+}
+
+.recipe-item.selected-for-assign, .planned-item.selected-for-assign {
+  border: 2px solid #276749 !important;
+  background-color: rgba(121, 216, 128, 0.25) !important;
+  box-shadow: 0 0 0 3px rgba(39, 103, 73, 0.3) !important;
+}
+
 .planned-item {
   display: flex;
   align-items: center;
