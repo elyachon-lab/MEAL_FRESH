@@ -6,7 +6,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 import { format, startOfWeek, addDays, addWeeks } from "date-fns";
 import { fr } from "date-fns/locale";
 import { assignMeal, removeMeal, getWeeklyPlanning } from "../app/actions/planning";
-import { updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
+import { createRecipeWithIngredients, updateRecipeWithIngredients, deleteRecipe } from "../app/actions/recipes";
 import { mergeRecipes, deleteLocalRecipe, saveLocalRecipe, mergePlannings, saveLocalPlanning, removeLocalPlanning } from "../lib/storage";
 import { inferCategoryName, getIngredientEmoji } from "../lib/emojis";
 import { getRecipeEmoji } from "../lib/recipe-emojis";
@@ -238,6 +238,10 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
   const [selectedForAssign, setSelectedForAssign] = useState<SelectedForAssign>(null);
 
+  // Saisie rapide directe d'une recette dans un créneau du semainier
+  const [quickInputSlot, setQuickInputSlot] = useState<{ dayIndex: number; mealTime: MealKey } | null>(null);
+  const [quickInputTitle, setQuickInputTitle] = useState("");
+
   // État des éléments cochés dans la liste de courses de la semaine
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({});
   const [copiedNotification, setCopiedNotification] = useState(false);
@@ -448,6 +452,70 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
       if (editingRecipe?.id === id) setEditingRecipe(null);
       syncAfterMutation();
       router.refresh();
+    });
+  };
+
+  // ── SAISIE RAPIDE DIRECTE D'UNE RECETTE DANS LE SEMAINIER ──
+  const handleQuickSubmitRecipe = (dayIndex: number, mealTime: MealKey, rawTitle: string) => {
+    const title = rawTitle.trim();
+    if (!title) {
+      setQuickInputSlot(null);
+      return;
+    }
+
+    const dateKey = getFormattedDateKey(addDays(startDate, dayIndex));
+
+    // 1. Chercher si la recette existe déjà dans la banque (insensible à la casse)
+    let recipeToAssign = allRecipes.find(r => r.title.toLowerCase().trim() === title.toLowerCase());
+
+    if (!recipeToAssign) {
+      // 2. Création locale immédiate de la nouvelle recette
+      recipeToAssign = saveLocalRecipe({ title });
+      setAllRecipes(prev => [recipeToAssign!, ...prev]);
+
+      // Sauvegarde serveur en arrière-plan
+      startTransition(async () => {
+        const res = await createRecipeWithIngredients({ title });
+        if (res.success && res.id) {
+          recipeToAssign!.id = res.id;
+        }
+      });
+    }
+
+    // 3. Placement immédiat au créneau du semainier (UI instantanée 0ms)
+    const tempId = `temp_${Date.now()}`;
+    const newMeal: PlannedMeal = {
+      id: tempId,
+      recipe: recipeToAssign,
+      date: dateKey,
+      mealTime,
+    };
+
+    saveLocalPlanning(newMeal);
+    setLocalPlannings(prev => [...prev, newMeal]);
+
+    const dayName = DAYS[dayIndex];
+    setGenNotification(`⚡ "${recipeToAssign.title}" enregistré sur ${dayName} (${mealTime}) !`);
+    setTimeout(() => setGenNotification(null), 3000);
+
+    setQuickInputSlot(null);
+    setQuickInputTitle("");
+
+    // 4. Assignation serveur en arrière-plan
+    startTransition(async () => {
+      const res = await assignMeal(recipeToAssign.id, dateKey, mealTime);
+      if (res?.success && res.planning) {
+        const saved = res.planning as PlannedMeal;
+        removeLocalPlanning(tempId);
+        saveLocalPlanning(saved);
+        setLocalPlannings(prev => [
+          ...prev.filter(p => p.id !== tempId && p.id !== saved.id),
+          saved,
+        ]);
+        router.refresh();
+      } else {
+        syncAfterMutation();
+      }
     });
   };
 
@@ -1041,7 +1109,7 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                               position: "relative"
                             }}
                           >
-                            {plannedMeals.length > 0 ? (
+                            {plannedMeals.length > 0 && (
                               <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                                 {plannedMeals.map((planned, pIdx) => (
                                   <Draggable key={`planning_${planned.id}_${pIdx}`} draggableId={`planning_${planned.id}_${pIdx}`} index={pIdx}>
@@ -1106,11 +1174,76 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                                   </Draggable>
                                 ))}
                               </div>
+                            )}
+                            {quickInputSlot?.dayIndex === dayIndex && quickInputSlot?.mealTime === m.key ? (
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  handleQuickSubmitRecipe(dayIndex, m.key, quickInputTitle);
+                                }}
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "0.3rem",
+                                  background: "var(--surface)",
+                                  padding: "0.4rem",
+                                  borderRadius: "var(--radius-sm)",
+                                  border: "2px solid var(--primary)",
+                                  boxShadow: "var(--shadow-sm)",
+                                  marginTop: "0.25rem",
+                                  zIndex: 10
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  placeholder="Écrire la recette..."
+                                  value={quickInputTitle}
+                                  onChange={(e) => setQuickInputTitle(e.target.value)}
+                                  list="recipes-datalist"
+                                  className="input-field"
+                                  style={{ fontSize: "0.8rem", padding: "0.25rem 0.4rem" }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Escape") setQuickInputSlot(null);
+                                  }}
+                                />
+                                <div style={{ display: "flex", gap: "0.25rem", justifyContent: "flex-end" }}>
+                                  <button
+                                    type="submit"
+                                    className="btn btn-primary btn-sm"
+                                    style={{ padding: "0.15rem 0.45rem", fontSize: "0.75rem", fontWeight: 700 }}
+                                  >
+                                    ⚡ Valider
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ padding: "0.15rem 0.35rem", fontSize: "0.75rem" }}
+                                    onClick={() => setQuickInputSlot(null)}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </form>
                             ) : selectedForAssign ? (
                               <div style={{ fontSize: "0.75rem", color: "var(--primary-dark)", fontWeight: 700, textAlign: "center", paddingTop: "0.5rem", userSelect: "none" }}>
                                 + Placer ici
                               </div>
-                            ) : null}
+                            ) : (
+                              <button
+                                type="button"
+                                className="quick-add-slot-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setQuickInputSlot({ dayIndex, mealTime: m.key });
+                                  setQuickInputTitle("");
+                                }}
+                                title="Saisir/écrire le nom d'une recette directement"
+                              >
+                                ➕ {plannedMeals.length === 0 ? "Écrire une recette" : "Saisir"}
+                              </button>
+                            )}
                             {provided.placeholder}
                           </div>
                         )}
@@ -1190,38 +1323,99 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                             ) : null}
                           </div>
 
-                          <div className="mobile-meal-slot-select-wrapper">
-                            <select
-                              className="input-field mobile-meal-select"
-                              value={primaryPlanned ? primaryPlanned.recipe.id : ""}
-                              onChange={(e) => handleSelectMeal(dayIndex, m.key, e.target.value, primaryPlanned?.id)}
+                          {quickInputSlot?.dayIndex === dayIndex && quickInputSlot?.mealTime === m.key ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                handleQuickSubmitRecipe(dayIndex, m.key, quickInputTitle);
+                              }}
+                              style={{
+                                display: "flex",
+                                gap: "0.35rem",
+                                marginTop: "0.5rem"
+                              }}
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <option value="">-- Choisir une recette --</option>
-                              {Object.entries(recipesByCategory).map(([catName, recList]) => {
-                                const emoji = CATEGORY_EMOJIS[catName] || "🍲";
-                                return (
-                                  <optgroup key={catName} label={`${emoji} ${catName}`}>
-                                    {recList.map(r => (
-                                      <option key={r.id} value={r.id}>
-                                        {r.title}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                );
-                              })}
-                            </select>
-                            
-                            {primaryPlanned && (
+                              <input
+                                type="text"
+                                autoFocus
+                                placeholder="Écrire la recette..."
+                                value={quickInputTitle}
+                                onChange={(e) => setQuickInputTitle(e.target.value)}
+                                list="recipes-datalist"
+                                className="input-field"
+                                style={{ fontSize: "0.85rem", flex: 1, padding: "0.3rem 0.5rem" }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") setQuickInputSlot(null);
+                                }}
+                              />
+                              <button
+                                type="submit"
+                                className="btn btn-primary btn-sm"
+                                style={{ padding: "0.2rem 0.5rem", fontSize: "0.8rem", fontWeight: 700 }}
+                              >
+                                ⚡ Valider
+                              </button>
                               <button
                                 type="button"
-                                className="btn btn-ghost btn-sm remove-meal-btn"
-                                onClick={() => handleRemoveMeal(primaryPlanned.id)}
-                                title="Supprimer"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setQuickInputSlot(null)}
                               >
                                 ✕
                               </button>
-                            )}
-                          </div>
+                            </form>
+                          ) : (
+                            <div className="mobile-meal-slot-select-wrapper" style={{ display: "flex", gap: "0.35rem", marginTop: "0.5rem" }}>
+                              <select
+                                className="input-field mobile-meal-select"
+                                value={primaryPlanned ? primaryPlanned.recipe.id : ""}
+                                onChange={(e) => handleSelectMeal(dayIndex, m.key, e.target.value, primaryPlanned?.id)}
+                                style={{ flex: 1 }}
+                              >
+                                <option value="">-- Choisir une recette --</option>
+                                {Object.entries(recipesByCategory).map(([catName, recList]) => {
+                                  const emoji = CATEGORY_EMOJIS[catName] || "🍲";
+                                  return (
+                                    <optgroup key={catName} label={`${emoji} ${catName}`}>
+                                      {recList.map(r => (
+                                        <option key={r.id} value={r.id}>
+                                          {r.title}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  );
+                                })}
+                              </select>
+                              
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                style={{ padding: "0.2rem 0.45rem", fontSize: "0.75rem", whiteSpace: "nowrap" }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setQuickInputSlot({ dayIndex, mealTime: m.key });
+                                  setQuickInputTitle("");
+                                }}
+                                title="Écrire directement le nom d'une recette"
+                              >
+                                ✏️ Écrire
+                              </button>
+
+                              {primaryPlanned && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm remove-meal-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveMeal(primaryPlanned.id);
+                                  }}
+                                  title="Supprimer"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1467,6 +1661,13 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
           </div>
         </div>
       )}
+
+      {/* Datalist d'autocomplétion des recettes */}
+      <datalist id="recipes-datalist">
+        {allRecipes.map((r) => (
+          <option key={r.id} value={r.title} />
+        ))}
+      </datalist>
 
     </DragDropContext>
   );

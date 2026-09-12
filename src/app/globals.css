@@ -567,6 +567,29 @@ textarea.input-field { resize: vertical; }
   box-shadow: 0 0 0 3px rgba(39, 103, 73, 0.3) !important;
 }
 
+.quick-add-slot-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.25rem 0.4rem;
+  margin-top: 0.35rem;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.quick-add-slot-btn:hover {
+  background: var(--surface);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 .planned-item {
   display: flex;
   align-items: center;
