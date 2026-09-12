@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createRecipeWithIngredients } from "../app/actions/recipes";
 import { getIngredientEmoji } from "../lib/emojis";
-import { saveLocalRecipe } from "../lib/storage";
+import { notifyRecipesChanged, saveLocalRecipe } from "../lib/storage";
 
 type Category = { id: string; name: string };
 type IngredientInput = { name: string; categoryId: string; quantity: string };
@@ -27,7 +27,7 @@ export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
   const [ingQty, setIngQty] = useState("");
   const [ingCategoryId, setIngCategoryId] = useState(categories[0]?.id ?? "");
 
-  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" | "local" } | null>(null);
 
   const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name ?? "Général";
 
@@ -48,6 +48,15 @@ export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
       e.preventDefault();
       handleAddIngredient();
     }
+  };
+
+  const resetForm = () => {
+    setTitle("");
+    setUrlSource("");
+    setInstructions("");
+    setIngredients([]);
+    setIngName("");
+    setIngQty("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,9 +85,7 @@ export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
       })),
     });
 
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("mealfresh_recipes_updated"));
-    }
+    notifyRecipesChanged();
 
     startTransition(async () => {
       try {
@@ -90,17 +97,26 @@ export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
         });
 
         if (res && res.success === false) {
+          // La recette vient d'être écrite en local : afficher « Non connecté. »
+          // en rouge laissait croire que rien n'avait été gardé, alors que la
+          // recette apparaît bel et bien dans la liste juste à côté.
+          if (res.error === "Non connecté.") {
+            resetForm();
+            setMessage({
+              text: "📥 Recette enregistrée sur cet appareil. Connectez-vous pour la retrouver sur vos autres appareils.",
+              type: "local",
+            });
+            router.refresh();
+            onSuccess?.();
+            setTimeout(() => setMessage(null), 6000);
+            return;
+          }
+
           setMessage({ text: res.error || "Erreur lors de l'enregistrement.", type: "error" });
           return;
         }
 
-        setTitle("");
-        setUrlSource("");
-        setInstructions("");
-        setIngredients([]);
-        setIngName("");
-        setIngQty("");
-
+        resetForm();
         setMessage({ text: "✅ Recette enregistrée dans la banque avec succès !", type: "success" });
 
         router.refresh();
@@ -120,15 +136,22 @@ export default function RecipeForm({ categories, onSuccess }: RecipeFormProps) {
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       {message && (
         <div
-          className={`badge ${message.type === "success" ? "badge-accent" : "badge-neutral"}`}
+          className="badge"
           style={{
             padding: "0.75rem 1rem",
             borderRadius: "var(--radius-md)",
             fontSize: "0.875rem",
             textAlign: "center",
             display: "block",
-            color: message.type === "success" ? "var(--accent)" : "var(--danger)",
-            background: message.type === "success" ? "var(--accent-light)" : "#fee2e2",
+            lineHeight: 1.45,
+            color:
+              message.type === "success" ? "var(--accent)"
+              : message.type === "local" ? "#8A5A12"
+              : "var(--danger)",
+            background:
+              message.type === "success" ? "var(--accent-light)"
+              : message.type === "local" ? "#FFF4E5"
+              : "#fee2e2",
           }}
         >
           {message.text}

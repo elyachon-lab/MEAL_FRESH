@@ -74,6 +74,24 @@ export default function Header({ user }: HeaderProps) {
         </div>
       </header>
 
+      {/* ── Bandeau « mode local » ──
+          Sans session, l'application reste utilisable mais rien ne part sur le
+          serveur : les recettes et le planning ne vivent que dans le
+          localStorage de ce navigateur, et le budget n'est pas conservé du
+          tout. L'utilisateur voyait jusqu'ici une application qui semblait
+          fonctionner normalement. */}
+      {!user && (
+        <div className="offline-banner" role="status">
+          <span aria-hidden="true">📥</span>
+          <span>
+            <strong>Mode local</strong> — vos données restent sur cet appareil.
+          </span>
+          <Link href="/login" className="offline-banner-link">
+            Se connecter pour les sauvegarder →
+          </Link>
+        </div>
+      )}
+
       {/* ── Bottom Navigation Mobile ── */}
       <nav className="bottom-navbar">
         <Link href="/planning" className={`bottom-nav-item ${isActive("/planning") ? "active" : ""}`}>

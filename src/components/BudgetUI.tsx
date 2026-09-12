@@ -61,12 +61,21 @@ const loadRestoAmount = (mStr: string) => {
   }
 };
 
+/**
+ * Cartes par défaut SANS lecture du localStorage : c'est l'état du tout premier
+ * rendu, qui doit être identique sur le serveur et dans le navigateur sous
+ * peine d'erreur d'hydratation.
+ */
+const getBaseCards = (defaultCB: number): PaymentCard[] => [
+  { id: "card_cb", name: "Carte Perso / CB", icon: "💳", budgetAmount: defaultCB },
+  { id: "card_resto", name: "Carte Resto", icon: "🍽️", budgetAmount: 0 },
+];
+
 const getDefaultCards = (mStr: string, defaultCB: number): PaymentCard[] => {
   const restoVal = loadRestoAmount(mStr);
-  return [
-    { id: "card_cb", name: "Carte Perso / CB", icon: "💳", budgetAmount: defaultCB },
-    { id: "card_resto", name: "Carte Resto", icon: "🍽️", budgetAmount: restoVal },
-  ];
+  return getBaseCards(defaultCB).map((card) =>
+    card.id === "card_resto" ? { ...card, budgetAmount: restoVal } : card,
+  );
 };
 
 const loadCustomCards = (mStr: string, defaultCB: number): PaymentCard[] => {
@@ -132,15 +141,19 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   const currentMonthStr = format(currentMonthDate, "yyyy-MM");
 
   // Cartes de paiement configurées
-  const [cards, setCards] = useState<PaymentCard[]>(() =>
-    loadCustomCards(initialBudget.month, initialBudget.amount)
-  );
+  // État initial déterministe (aucun accès au localStorage) : les cartes
+  // réellement enregistrées sont chargées par l'effet « changement de mois »,
+  // qui s'exécute dès le montage.
+  const [cards, setCards] = useState<PaymentCard[]>(() => getBaseCards(initialBudget.amount));
 
   // Formulaire d'ajout d'une nouvelle carte
   const [showAddCardModal, setShowAddCardModal] = useState(false);
   const [newCardName, setNewCardName] = useState("");
   const [newCardIcon, setNewCardIcon] = useState("💳");
   const [newCardAmount, setNewCardAmount] = useState("");
+
+  // Carte dont la suppression attend une confirmation
+  const [confirmDeleteCardId, setConfirmDeleteCardId] = useState<string | null>(null);
 
   // Édition en ligne d'une carte
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
@@ -367,7 +380,11 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
         setExpenses(prev => [res.expense, ...prev.filter(e => e.id !== tempId)]);
       } else {
         setExpenses(prev => prev.filter(e => e.id !== tempId));
-        setErrorMsg(res.error ?? "La dépense n'a pas pu être enregistrée.");
+        setErrorMsg(
+          res.error === "Non connecté."
+            ? "Connectez-vous pour enregistrer vos dépenses : le budget n'est pas conservé sur cet appareil."
+            : res.error ?? "La dépense n'a pas pu être enregistrée.",
+        );
       }
     });
   };
@@ -467,22 +484,6 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
   return (
     <div className="budget-dashboard" style={{ opacity: isPending || isLoadingMonth ? 0.9 : 1 }}>
 
-      {errorMsg && (
-        <div
-          role="alert"
-          style={{
-            padding: "0.75rem 1rem",
-            marginBottom: "1rem",
-            borderRadius: "var(--radius-md)",
-            background: "#fee2e2",
-            color: "#b91c1c",
-            fontSize: "0.875rem",
-          }}
-        >
-          {errorMsg}
-        </div>
-      )}
-      
       {/* ── En-tête du Budget & Navigation par Mois ── */}
       <div className="budget-header-card card" style={{ padding: "1.5rem" }}>
         <div className="budget-header-main" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1.25rem" }}>
@@ -643,16 +644,45 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                       ✏️
                     </button>
 
+                    {/* Un seul clic effaçait la carte et son budget, sans retour
+                        possible : les dépenses qui lui étaient rattachées
+                        basculent sur la première carte. On demande confirmation. */}
                     {cards.length > 1 && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        style={{ padding: "0.15rem 0.4rem", fontSize: "0.8rem" }}
-                        onClick={() => handleDeleteCard(card.id)}
-                        title="Supprimer la carte"
-                      >
-                        🗑️
-                      </button>
+                      confirmDeleteCardId === card.id ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            style={{ padding: "0.15rem 0.45rem", fontSize: "0.7rem", fontWeight: 700 }}
+                            onClick={() => {
+                              handleDeleteCard(card.id);
+                              setConfirmDeleteCardId(null);
+                            }}
+                            title={`Supprimer « ${card.name} » définitivement`}
+                          >
+                            Supprimer
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: "0.15rem 0.4rem", fontSize: "0.8rem" }}
+                            onClick={() => setConfirmDeleteCardId(null)}
+                            title="Annuler"
+                          >
+                            ✕
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: "0.15rem 0.4rem", fontSize: "0.8rem" }}
+                          onClick={() => setConfirmDeleteCardId(card.id)}
+                          title="Supprimer la carte"
+                        >
+                          🗑️
+                        </button>
+                      )
                     )}
                   </div>
                 </div>
@@ -877,6 +907,24 @@ export default function BudgetUI({ budget: initialBudget }: BudgetUIProps) {
                   onChange={(e) => setExpenseDescription(e.target.value)}
                 />
               </div>
+
+              {/* L'erreur s'affichait en haut de page, hors écran : l'utilisateur
+                  validait en bas du formulaire et ne voyait jamais le refus. */}
+              {errorMsg && (
+                <div
+                  role="alert"
+                  style={{
+                    padding: "0.65rem 0.85rem",
+                    borderRadius: "var(--radius-md)",
+                    background: "#fee2e2",
+                    color: "#b91c1c",
+                    fontSize: "0.85rem",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {errorMsg}
+                </div>
+              )}
 
               <button
                 type="submit"

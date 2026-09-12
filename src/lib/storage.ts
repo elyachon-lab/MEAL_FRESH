@@ -16,6 +16,18 @@ export type PlannedMeal = { id: string; recipe: Recipe; date: Date | string; mea
 const RECIPES_STORAGE_KEY = "mealfresh_local_recipes_v1";
 const PLANNINGS_STORAGE_KEY = "mealfresh_local_plannings_v1";
 
+/**
+ * Les écrans qui affichent la banque de recettes (liste, planning) sont montés
+ * en parallèle du formulaire qui la modifie. Un simple évènement les prévient
+ * qu'il faut relire le stockage local, sans remonter d'état partagé.
+ */
+export const RECIPES_UPDATED_EVENT = "mealfresh_recipes_updated";
+
+export function notifyRecipesChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(RECIPES_UPDATED_EVENT));
+}
+
 export function getLocalRecipes(): Recipe[] {
   if (typeof window === "undefined") return [];
   try {

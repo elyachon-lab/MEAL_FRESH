@@ -4,13 +4,17 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { fillMissingRecipeImages } from "../app/actions/recipes";
-import { mergeRecipes } from "../lib/storage";
+import { RECIPES_UPDATED_EVENT, mergeRecipes } from "../lib/storage";
 import RecipeCard from "./RecipeCard";
 
 const BATCH_SIZE = 10;
 
 export default function RecipeBankList({ initialRecipes, categories }: { initialRecipes: any[]; categories: any[] }) {
-  const [recipes, setRecipes] = useState(() => mergeRecipes(initialRecipes));
+  // Le premier rendu doit refléter EXACTEMENT le HTML du serveur : lire le
+  // localStorage ici provoquerait une erreur d'hydratation dès que le stockage
+  // local contient une recette absente du serveur. La fusion a lieu dans
+  // l'effet ci-dessous, donc après l'hydratation.
+  const [recipes, setRecipes] = useState<any[]>(initialRecipes);
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const router = useRouter();
@@ -22,9 +26,9 @@ export default function RecipeBankList({ initialRecipes, categories }: { initial
       setRecipes(mergeRecipes(initialRecipes));
     };
 
-    window.addEventListener("mealfresh_recipes_updated", handleUpdate);
+    window.addEventListener(RECIPES_UPDATED_EVENT, handleUpdate);
     return () => {
-      window.removeEventListener("mealfresh_recipes_updated", handleUpdate);
+      window.removeEventListener(RECIPES_UPDATED_EVENT, handleUpdate);
     };
   }, [initialRecipes]);
 

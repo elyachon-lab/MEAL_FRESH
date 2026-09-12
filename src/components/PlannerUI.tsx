@@ -297,6 +297,31 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     }
   }, [startKey, recipes, plannings]);
 
+  // Échap ferme la modale de détail et annule le mode placement : sans cela,
+  // la seule sortie était la croix, difficile à viser au doigt.
+  useEffect(() => {
+    if (!viewingRecipeModal && !selectedForAssign) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (viewingRecipeModal) setViewingRecipeModal(null);
+      else setSelectedForAssign(null);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [viewingRecipeModal, selectedForAssign]);
+
+  // La page de fond ne doit pas défiler derrière la modale ouverte.
+  useEffect(() => {
+    if (!viewingRecipeModal) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [viewingRecipeModal]);
+
   // Recettes filtrées et triées par catégorie pour la banque de gauche
   const filteredRecipes = useMemo(() => {
     if (selectedBankCategory === "ALL") return allRecipes;
@@ -465,19 +490,12 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
 
     // 1. Chercher si la recette existe déjà dans la banque (insensible à la casse)
     let recipeToAssign = allRecipes.find(r => r.title.toLowerCase().trim() === title.toLowerCase());
+    const mustCreate = !recipeToAssign;
 
     if (!recipeToAssign) {
       // 2. Création locale immédiate de la nouvelle recette
       recipeToAssign = saveLocalRecipe({ title });
       setAllRecipes(prev => [recipeToAssign!, ...prev]);
-
-      // Sauvegarde serveur en arrière-plan
-      startTransition(async () => {
-        const res = await createRecipeWithIngredients({ title });
-        if (res.success && res.id) {
-          recipeToAssign!.id = res.id;
-        }
-      });
     }
 
     // 3. Placement immédiat au créneau du semainier (UI instantanée 0ms)
@@ -499,9 +517,22 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
     setQuickInputSlot(null);
     setQuickInputTitle("");
 
-    // 4. Assignation serveur en arrière-plan
+    // 4. Création puis assignation serveur, dans cet ordre.
+    //
+    // Les deux appels vivaient dans deux transitions distinctes : l'assignation
+    // partait avec l'identifiant local (« local_rec_… ») avant que la création
+    // n'ait renvoyé l'UUID, et le serveur la rejetait silencieusement.
     startTransition(async () => {
-      const res = await assignMeal(recipeToAssign.id, dateKey, mealTime);
+      let serverRecipeId = recipeToAssign.id;
+
+      if (mustCreate) {
+        const created = await createRecipeWithIngredients({ title });
+        if (!created.success || !created.id) return;
+        serverRecipeId = created.id;
+        recipeToAssign.id = created.id;
+      }
+
+      const res = await assignMeal(serverRecipeId, dateKey, mealTime);
       if (res?.success && res.planning) {
         const saved = res.planning as PlannedMeal;
         removeLocalPlanning(tempId);
@@ -1633,13 +1664,9 @@ export default function PlannerUI({ recipes, plannings, categories = [] }: Plann
                 ✏️ Modifier la recette
               </button>
               
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => setViewingRecipeModal(null)}
-              >
-                Fermer
-              </button>
+              {/* Un « Fermer » de plus ne servait à rien : la modale se ferme
+                  déjà par la croix en haut, par un clic sur le fond et par
+                  Échap. La place revient à l'action utile. */}
             </div>
           </div>
         </div>

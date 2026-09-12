@@ -154,16 +154,9 @@ export default function CategoriesOverview({
           <h2 style={{ fontSize: "1.1rem", margin: 0 }}>
             🎯 Cliquez sur un ingrédient pour voir ses recettes ({filteredIngredients.length})
           </h2>
-          {selectedIngName && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setSelectedIngName(null)}
-              style={{ fontSize: "0.8rem", color: "var(--primary)" }}
-            >
-              ✕ Effacer la sélection
-            </button>
-          )}
+          {/* « ✕ Effacer la sélection » doublonnait la bulle « 🌟 Tous », juste
+              en dessous et déjà visible : même action, deux boutons. On garde
+              la bulle, qui indique en plus l'état courant. */}
         </div>
 
         <div style={{ display: "flex", gap: "1rem", overflowX: "auto", paddingBottom: "0.5rem", scrollbarWidth: "thin" }}>

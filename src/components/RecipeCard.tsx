@@ -6,6 +6,7 @@ import { format, startOfWeek, addDays } from "date-fns";
 import { deleteRecipe, updateRecipeWithIngredients } from "../app/actions/recipes";
 import { assignMeal } from "../app/actions/planning";
 import { getIngredientEmoji } from "../lib/emojis";
+import { deleteLocalRecipe, notifyRecipesChanged, saveLocalPlanning, saveLocalRecipe } from "../lib/storage";
 import RecipeThumbnail from "./RecipeThumbnail";
 
 type Category = { id: string; name: string };
@@ -78,6 +79,22 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   };
 
   const handleSave = () => {
+    // La copie locale doit suivre la modification, sinon mergeRecipes() la
+    // réinjecte telle quelle au rendu suivant et l'édition paraît annulée.
+    saveLocalRecipe({
+      id: recipe.id,
+      title,
+      urlSource,
+      instructions,
+      ingredients: ingredients.map((ing) => ({
+        name: ing.name,
+        categoryId: ing.categoryId,
+        categoryName: getCategoryName(ing.categoryId),
+        quantity: ing.quantity,
+      })),
+    });
+    notifyRecipesChanged();
+
     startTransition(async () => {
       await updateRecipeWithIngredients({ id: recipe.id, title, urlSource, instructions, ingredients });
       setEditing(false);
@@ -86,6 +103,12 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   };
 
   const handleDelete = () => {
+    // Sans cette ligne, la recette est retirée du serveur mais mergeRecipes()
+    // la restaure depuis le localStorage : le bouton semblait sans effet.
+    deleteLocalRecipe(recipe.id);
+    notifyRecipesChanged();
+    setConfirmDelete(false);
+
     startTransition(async () => {
       await deleteRecipe(recipe.id);
       router.refresh();
@@ -95,14 +118,36 @@ export default function RecipeCard({ recipe, categories }: { recipe: Recipe; cat
   const handleAddToPlanning = () => {
     const startDate = startOfWeek(new Date(), { weekStartsOn: 1 });
     const targetDate = addDays(startDate, selectedDay);
+    const dateKey = format(targetDate, "yyyy-MM-dd");
+
+    // Le planning local rend le créneau visible tout de suite, y compris pour
+    // une recette qui n'existe que dans ce navigateur.
+    const tempId = `temp_${Date.now()}`;
+    saveLocalPlanning({
+      id: tempId,
+      recipe: recipe as any,
+      date: dateKey,
+      mealTime: selectedMeal,
+    });
 
     startTransition(async () => {
-      await assignMeal(recipe.id, format(targetDate, "yyyy-MM-dd"), selectedMeal);
-      setPlanSuccessMsg(`✅ Ajouté à ${DAYS[selectedDay]} (${selectedMeal}) !`);
+      const res = await assignMeal(recipe.id, dateKey, selectedMeal);
+
+      // Annoncer un succès sans vérifier la réponse affichait « ✅ Ajouté »
+      // alors que rien n'avait été enregistré côté serveur.
+      const slot = `${DAYS[selectedDay]} (${selectedMeal})`;
+      setPlanSuccessMsg(
+        res?.success
+          ? `✅ Ajouté à ${slot} !`
+          : res?.error === "Non connecté."
+            ? `📥 Ajouté à ${slot} sur cet appareil seulement.`
+            : `⚠️ ${res?.error ?? "Enregistrement impossible."}`,
+      );
+
       setTimeout(() => {
         setShowPlanMenu(false);
         setPlanSuccessMsg("");
-      }, 1800);
+      }, 2600);
       router.refresh();
     });
   };

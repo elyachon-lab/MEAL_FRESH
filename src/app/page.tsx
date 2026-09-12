@@ -27,6 +27,25 @@ const features = [
   },
 ];
 
+/**
+ * Chaque pastille ouvre SA catégorie.
+ *
+ * Les sept menaient toutes vers « /ingredients » : sept boutons distincts pour
+ * une seule destination. `category` reprend le nom exact du référentiel, que
+ * /ingredients/[categoryId] sait résoudre aussi bien par identifiant que par
+ * nom — « Épices » seul ne correspondait à aucune ligne.
+ */
+const CATEGORY_CHIPS = [
+  { emoji: "🍎", label: "Fruits",            category: "Fruits" },
+  { emoji: "🥦", label: "Légumes",           category: "Légumes" },
+  { emoji: "🥩", label: "Protéines",         category: "Protéines" },
+  { emoji: "🌾", label: "Glucides",          category: "Glucides" },
+  { emoji: "🧀", label: "Produits Laitiers", category: "Produits Laitiers" },
+  { emoji: "🫒", label: "Matières Grasses",  category: "Matières Grasses" },
+  { emoji: "🌶️", label: "Épices",            category: "Épices & Condiments" },
+  { emoji: "🍬", label: "Sucré",             category: "Sucré" },
+];
+
 export default function Home() {
   return (
     <>
@@ -115,11 +134,8 @@ export default function Home() {
           Explorez vos ingrédients par catégorie pour trouver des idées de recettes avec ce que vous avez déjà dans votre frigo.
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.85rem", justifyContent: "center" }}>
-          {[
-            ["🍎","Fruits"],["🥦","Légumes"],["🥩","Protéines"],
-            ["🌾","Glucides"],["🧀","Produits Laitiers"],["🫒","Matières Grasses"],["🌶️","Épices"],
-          ].map(([emoji, label]) => (
-            <Link key={label} href="/ingredients">
+          {CATEGORY_CHIPS.map(({ emoji, label, category }) => (
+            <Link key={label} href={`/ingredients/${encodeURIComponent(category)}`}>
               <span className="badge" style={{ padding: ".65rem 1.25rem", fontSize: "0.95rem", cursor: "pointer", background: "white", border: "1px solid var(--border)", boxShadow: "var(--shadow-xs)" }}>
                 {emoji} {label}
               </span>
