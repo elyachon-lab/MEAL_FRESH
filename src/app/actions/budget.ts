@@ -18,6 +18,7 @@ export async function getMonthlyBudget(monthStr: string) {
 
   try {
     const { supabase, user } = await requireSession();
+    if (!user || !supabase) return empty;
 
     const select = "id, month, amount, expenses ( id, date, amount, category, description )";
 
@@ -79,6 +80,7 @@ export async function updateBudgetAmount(monthStr: string, newAmount: number) {
 
   try {
     const { supabase, user } = await requireSession();
+    if (!user || !supabase) return { success: false as const, error: "Non connecté." };
 
     const { error } = await supabase
       .from("monthly_budgets")
@@ -111,6 +113,7 @@ export async function addExpense(data: {
 
   try {
     const { supabase, user } = await requireSession();
+    if (!user || !supabase) return { success: false as const, error: "Non connecté." };
 
     const budget = await getMonthlyBudget(data.monthStr);
     if (!budget.id) throw new Error("Budget du mois introuvable.");

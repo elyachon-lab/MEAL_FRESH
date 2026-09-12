@@ -73,7 +73,8 @@ async function resolveIngredientLines(
 
 export async function getRecipes() {
   try {
-    const { supabase } = await requireSession();
+    const { supabase, user } = await requireSession();
+    if (!user || !supabase) return [];
 
     const { data, error } = await supabase
       .from("recipes")
@@ -104,6 +105,7 @@ export async function createRecipeWithIngredients(data: {
 
   try {
     const { supabase, user } = await requireSession();
+    if (!user || !supabase) return { success: false as const, error: "Non connecté." };
 
     const created = await supabase
       .from("recipes")
@@ -148,6 +150,7 @@ export async function updateRecipeWithIngredients(data: {
 
   try {
     const { supabase, user } = await requireSession();
+    if (!user || !supabase) return { success: false as const, error: "Non connecté." };
 
     // RLS restreint la mise à jour aux recettes du compte courant.
     const updated = await supabase

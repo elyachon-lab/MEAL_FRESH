@@ -11,11 +11,15 @@ import { createClient } from "./supabase/server";
  * chaque requête d'une même page.
  */
 export const getSession = cache(async () => {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return { supabase, user };
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return { supabase, user };
+  } catch {
+    return { supabase: null as any, user: null };
+  }
 });
 
 export async function getUser() {
@@ -32,11 +36,9 @@ export function isRedirectError(err: any): boolean {
 }
 
 /**
- * Session garantie : redirige vers /login si personne n'est connecté.
- * À appeler dans toute action ou page qui touche aux données.
+ * Renvoie le client Supabase et l'utilisateur connecté s'il existe.
  */
 export async function requireSession() {
   const { supabase, user } = await getSession();
-  if (!user) redirect("/login");
   return { supabase, user };
 }

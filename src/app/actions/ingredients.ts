@@ -8,7 +8,8 @@ import { findOrCreateIngredient, isUuid, listCategories } from "@/lib/ingredient
 /** Catégories du référentiel, avec le nombre d'ingrédients du compte courant. */
 export async function getCategories() {
   try {
-    const { supabase } = await requireSession();
+    const { supabase, user } = await requireSession();
+    if (!user || !supabase) return [];
 
     const { data, error } = await supabase
       .from("categories")
@@ -68,6 +69,7 @@ export async function addIngredientToCategory(categoryId: string, formData: Form
 
   try {
     const { supabase, user } = await requireSession();
+    if (!user || !supabase) return;
     const categories = await listCategories(supabase);
     await findOrCreateIngredient(supabase, user.id, name, categoryId, categories);
   } catch (err: any) {

@@ -13,7 +13,8 @@ const PLANNING_SELECT = `id, date, meal_time, recipe:recipes ( ${RECIPE_SELECT} 
 /** Plannings des 7 jours à partir de startDate (bornes incluses). */
 export async function getWeeklyPlanning(startDate: string | Date) {
   try {
-    const { supabase } = await requireSession();
+    const { supabase, user } = await requireSession();
+    if (!user || !supabase) return [];
 
     const start = toDateKey(startDate);
     const end = toDateKey(addDays(new Date(`${start}T12:00:00`), 6));
@@ -54,6 +55,7 @@ export async function assignMeal(
 ) {
   try {
     const { supabase, user } = await requireSession();
+    if (!user || !supabase) return { success: false as const, error: "Non connecté." };
     const date = toDateKey(dateInput);
 
     const isRealUUID = existingPlanningId && UUID_REGEX.test(existingPlanningId);

@@ -39,58 +39,29 @@ export async function proxy(request: NextRequest) {
 async function handle(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  // Sans configuration, on laisse passer : les pages afficheront un message
-  // d'erreur explicite plutôt qu'une boucle de redirection vers /login.
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return response;
 
-  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
+  try {
+    const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          for (const { name, value } of cookiesToSet) {
+            request.cookies.set(name, value);
+          }
+          response = NextResponse.next({ request });
+          for (const { name, value, options } of cookiesToSet) {
+            response.cookies.set(name, value, options);
+          }
+        },
       },
-      setAll(cookiesToSet) {
-        for (const { name, value } of cookiesToSet) {
-          request.cookies.set(name, value);
-        }
-        response = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
-        }
-      },
-    },
-  });
-
-  // Doit être appelé avant de produire la réponse pour que le rafraîchissement
-  // éventuel du jeton soit bien réécrit dans les cookies.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
-
-  if (!user && !isPublic(pathname)) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/login";
-    redirectUrl.search = "";
-    if (pathname !== "/") redirectUrl.searchParams.set("redirectTo", pathname);
-
-    const redirectResponse = NextResponse.redirect(redirectUrl);
-    response.cookies.getAll().forEach((c) => {
-      redirectResponse.cookies.set(c.name, c.value, c);
     });
-    return redirectResponse;
-  }
 
-  if (user && pathname === "/login") {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/";
-    redirectUrl.search = "";
-
-    const redirectResponse = NextResponse.redirect(redirectUrl);
-    response.cookies.getAll().forEach((c) => {
-      redirectResponse.cookies.set(c.name, c.value, c);
-    });
-    return redirectResponse;
+    await supabase.auth.getUser();
+  } catch {
+    // Ignorer les erreurs de rafraîchissement réseau pour ne jamais bloquer la navigation
   }
 
   return response;
